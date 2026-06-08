@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "worldcup-predictor"
+version = "0.1.0"
+description = "Calibrated probability model for the 2026 FIFA World Cup (ML core, Claude API at the boundaries)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.1",
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "statsmodels>=0.14",   # bivariate Poisson / Dixon-Coles fit
+    "pyarrow>=14.0",       # parquet I/O for the match table
+    "pyyaml>=6.0",         # config
+    "matplotlib>=3.8",     # reliability diagram
+    "requests>=2.31",      # data ingestion (the only networked module)
+    "anthropic>=0.40",     # Claude API: extraction, entity resolution, narration
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+xg = [
+    "soccerdata>=1.9",   # optional: FBref/Understat xG. Skip if using form from Transfermarkt appearances.
+]
+
+[project.scripts]
+wcpredict = "wcpredict.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow-running (deselect with -m 'not slow')",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

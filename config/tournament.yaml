@@ -1,0 +1,88 @@
+# tournament.yaml
+# 2026 FIFA World Cup format. Constants are confirmed from the published format.
+# The round-of-32 slotting + best-third allocation must come from FIFA's official
+# bracket (see note at the bottom) — do not invent those pairings.
+
+tournament:
+  name: "2026 FIFA World Cup"
+  hosts: [Canada, Mexico, United States]
+  start_date: 2026-06-11
+  end_date: 2026-07-19
+  final_venue: "MetLife Stadium, East Rutherford, New Jersey"
+  total_matches: 104
+
+format:
+  groups: 12
+  teams_per_group: 4
+  group_matches_per_team: 3        # single round robin within the group
+  advance_per_group: 2             # group winners + runners-up = 24
+  best_third_placed_advancing: 8   # 8 of 12 third-placed teams
+  knockout_teams: 32               # 24 + 8
+
+# Applied in order to rank teams within a group.
+group_tiebreakers:
+  - points
+  - goal_difference
+  - goals_scored
+  - team_conduct_score             # disciplinary / fair-play points
+  - fifa_ranking                   # latest published ranking
+
+# Applied in order to rank the 12 third-placed teams against each other;
+# the top 8 advance to the round of 32.
+third_place_ranking_tiebreakers:
+  - points
+  - goal_difference
+  - goals_scored
+  - team_conduct_score
+  - fifa_ranking
+
+knockout_rounds:
+  - round_of_32
+  - round_of_16
+  - quarter_finals
+  - semi_finals
+  - final
+third_place_playoff: true
+
+extra_time:
+  enabled: true                    # knockout draws after 90'
+  # ET goal rate is scaled down from the 90-minute lambda; factor in settings.yaml
+  # (simulation.et_lambda_scale).
+
+shootout:
+  enabled: true                    # if still level after extra time
+  # resolved by model/shootout.py (deliberately simple)
+
+# ----------------------------------------------------------------------------
+# OFFICIAL BRACKET — sourced from FIFA's published 2026 regulations Annex C
+# (all 495 combinations), verified via Wikipedia Template:2026 FIFA World Cup
+# third-place table.  bracket.py reads third_place_slots here and carries the
+# full 495-entry THIRD_PLACE_TABLE as a Python constant.
+# ----------------------------------------------------------------------------
+round_of_32_slots:
+  # Eight fixed pairings (group winner/runner-up only, no third-placed team):
+  fixed:
+    - [2A, 2B]   # Runner-up A vs Runner-up B
+    - [1C, 2F]   # Winner C vs Runner-up F
+    - [1F, 2C]   # Winner F vs Runner-up C
+    - [2E, 2I]   # Runner-up E vs Runner-up I
+    - [1H, 2J]   # Winner H vs Runner-up J
+    - [2K, 2L]   # Runner-up K vs Runner-up L
+    - [2D, 2G]   # Runner-up D vs Runner-up G
+    - [1J, 2H]   # Winner J vs Runner-up H
+  # Eight variable pairings: Winner of <slot> vs 3rd-place team from <pool>.
+  # The exact source group within the pool is resolved by THIRD_PLACE_TABLE
+  # in bracket.py once the eight qualifying third-placed groups are known.
+  third_place_slots:
+    A: [C, E, F, H, I]
+    B: [E, F, G, I, J]
+    D: [B, E, F, I, J]
+    E: [A, B, C, D, F]
+    G: [A, E, H, I, J]
+    I: [C, D, F, G, H]
+    K: [D, E, I, J, L]
+    L: [E, H, I, J, K]
+# The full 495-combination lookup (qualifying-groups frozenset -> slot mapping)
+# is the constant THIRD_PLACE_TABLE in src/wcpredict/sim/bracket.py.
+third_place_allocation: null       # see THIRD_PLACE_TABLE in bracket.py
+# ----------------------------------------------------------------------------

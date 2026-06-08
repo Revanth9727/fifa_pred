@@ -1,0 +1,67 @@
+# settings.yaml
+# Run-time parameters. Defaults are deliberate; change with intent.
+
+simulation:
+  n_runs: 50000                  # standard error at p≈0.2 ≈ 0.0018; bias dominates, not variance
+  random_seed: 42                # explicit seed for every stochastic component
+  et_lambda_scale: 0.33          # extra-time goal rate vs 90' (≈30/90, goals also rarer in ET)
+  shootout_strength_coef: 0.10   # small shrunk lean; heavily discounted — sim sensitivity is low
+
+snapshot:
+  cutoff: 2026-06-06             # frozen Phase-A training/features cutoff
+
+match_model:
+  type: bivariate_poisson        # with Dixon-Coles low-score correction
+  max_goals: 10                  # scoreline grid cap for deriving W/D/L
+  friendly_weight: 0.3           # importance weight for friendlies (down-weighted)
+  qualifier_weight: 0.7
+  tournament_weight: 1.0
+  form_window_months: 9          # recency window for form features
+
+adjustment:
+  # The pre-match LLM-driven adjustment layer. Structure comes from llm/; all
+  # numbers come from magnitude.py and these caps. See docs/ai_rules.md #10-15.
+  confidence_threshold: 0.5      # below this, the layer is a no-op
+  clip:
+    availability_max_abs_delta: 0.40   # hard cap on |signed mean-λ delta| (channel 1)
+    lineup_dispersion_max: 0.50        # hard cap on channel-2 dispersion term
+  decay:
+    news_half_life_days: 2.0           # stale news dies fast
+    kickoff_proximity_boost: true      # confirmed info near kickoff outweighs old news
+  supersession:
+    official_lineup_overrides: true    # confirmed XI -> channel 2 -> 0, channel 1 = confirmed absences only
+
+magnitude:
+  # Calibrated from club-football absence effects, shrunk, then clipped.
+  prior_source: club_absence_xg_delta
+  shrinkage: 0.5                 # aggressive shrink toward zero
+  importance_tiers:              # multipliers by player importance tier
+    talisman: 1.0
+    key_starter: 0.6
+    rotation: 0.2
+  rule_version: "v1"             # logged in every provenance record
+
+eval:
+  devig_method: shin             # alternative: proportional
+  metrics: [brier, log_loss]
+  reliability_bins: 10
+  ablate_by_source_tier: true    # official / beat_report / rumor
+  compare_with_without_adjustment: true   # the A/B that justifies the adjustment layer
+
+paths:
+  raw: data/raw
+  processed: data/processed
+  outputs: outputs
+  match_table: data/processed/matches.parquet
+  features: data/processed/features.parquet
+
+llm:
+  # Claude API (Anthropic). Used by llm/extract.py, data/entity_resolve.py,
+  # explain/narrate.py via the `anthropic` SDK and the Messages API.
+  # Key from environment: ANTHROPIC_API_KEY (never commit it).
+  provider: anthropic
+  model: claude-sonnet-4-6              # extraction + narration; verify current IDs at docs.claude.com
+  model_cheap: claude-haiku-4-5-20251001  # entity resolution (high volume, low stakes)
+  max_tokens: 1024
+  temperature: 0.0                      # extraction must be near-deterministic
+  extraction_sources_allowed: [official, beat_report, rumor]   # raw news only; NO market text

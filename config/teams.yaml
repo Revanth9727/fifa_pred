@@ -1,0 +1,85 @@
+# teams.yaml
+# 2026 FIFA World Cup — final 48-team field.
+# Draw held 5 Dec 2025; the four UEFA playoff and two intercontinental playoff
+# spots were filled on 31 Mar 2026. Source: official draw + final qualification.
+#
+# Names here are canonical short forms. data/entity_resolve.py maps each to the
+# spellings used by Elo / Transfermarkt / FBref before joining.
+
+groups:
+  A: [Mexico, South Africa, South Korea, Czechia]
+  B: [Canada, Bosnia and Herzegovina, Qatar, Switzerland]
+  C: [Brazil, Morocco, Haiti, Scotland]
+  D: [United States, Paraguay, Australia, Türkiye]
+  E: [Germany, Curaçao, Côte d'Ivoire, Ecuador]
+  F: [Netherlands, Japan, Sweden, Tunisia]
+  G: [Belgium, Egypt, Iran, New Zealand]
+  H: [Spain, Cabo Verde, Saudi Arabia, Uruguay]
+  I: [France, Senegal, Iraq, Norway]
+  J: [Argentina, Algeria, Austria, Jordan]
+  K: [Portugal, DR Congo, Uzbekistan, Colombia]
+  L: [England, Croatia, Ghana, Panama]
+
+teams:
+  # Group A
+  - {name: Mexico,                 group: A, confederation: CONCACAF, host: true}
+  - {name: South Africa,           group: A, confederation: CAF}
+  - {name: South Korea,            group: A, confederation: AFC}
+  - {name: Czechia,                group: A, confederation: UEFA}      # via UEFA playoff D
+  # Group B
+  - {name: Canada,                 group: B, confederation: CONCACAF, host: true}
+  - {name: Bosnia and Herzegovina, group: B, confederation: UEFA}      # via UEFA playoff A
+  - {name: Qatar,                  group: B, confederation: AFC}
+  - {name: Switzerland,            group: B, confederation: UEFA}
+  # Group C
+  - {name: Brazil,                 group: C, confederation: CONMEBOL}
+  - {name: Morocco,                group: C, confederation: CAF}
+  - {name: Haiti,                  group: C, confederation: CONCACAF}
+  - {name: Scotland,               group: C, confederation: UEFA}
+  # Group D
+  - {name: United States,          group: D, confederation: CONCACAF, host: true}
+  - {name: Paraguay,               group: D, confederation: CONMEBOL}
+  - {name: Australia,              group: D, confederation: AFC}
+  - {name: Türkiye,                group: D, confederation: UEFA}      # via UEFA playoff C
+  # Group E
+  - {name: Germany,                group: E, confederation: UEFA}
+  - {name: Curaçao,                group: E, confederation: CONCACAF}
+  - {name: Côte d'Ivoire,          group: E, confederation: CAF}
+  - {name: Ecuador,                group: E, confederation: CONMEBOL}
+  # Group F
+  - {name: Netherlands,            group: F, confederation: UEFA}
+  - {name: Japan,                  group: F, confederation: AFC}
+  - {name: Sweden,                 group: F, confederation: UEFA}      # via UEFA playoff B
+  - {name: Tunisia,                group: F, confederation: CAF}
+  # Group G
+  - {name: Belgium,                group: G, confederation: UEFA}
+  - {name: Egypt,                  group: G, confederation: CAF}
+  - {name: Iran,                   group: G, confederation: AFC}
+  - {name: New Zealand,            group: G, confederation: OFC}
+  # Group H
+  - {name: Spain,                  group: H, confederation: UEFA}
+  - {name: Cabo Verde,             group: H, confederation: CAF}
+  - {name: Saudi Arabia,           group: H, confederation: AFC}
+  - {name: Uruguay,                group: H, confederation: CONMEBOL}
+  # Group I
+  - {name: France,                 group: I, confederation: UEFA}
+  - {name: Senegal,                group: I, confederation: CAF}
+  - {name: Iraq,                   group: I, confederation: AFC}       # via intercontinental playoff
+  - {name: Norway,                 group: I, confederation: UEFA}
+  # Group J
+  - {name: Argentina,              group: J, confederation: CONMEBOL}
+  - {name: Algeria,                group: J, confederation: CAF}
+  - {name: Austria,                group: J, confederation: UEFA}
+  - {name: Jordan,                 group: J, confederation: AFC}
+  # Group K
+  - {name: Portugal,               group: K, confederation: UEFA}
+  - {name: DR Congo,               group: K, confederation: CAF}       # via intercontinental playoff
+  - {name: Uzbekistan,             group: K, confederation: AFC}
+  - {name: Colombia,               group: K, confederation: CONMEBOL}
+  # Group L
+  - {name: England,                group: L, confederation: UEFA}
+  - {name: Croatia,                group: L, confederation: UEFA}
+  - {name: Ghana,                  group: L, confederation: CAF}
+  - {name: Panama,                 group: L, confederation: CONCACAF}
+
+# Confederation totals (sanity check): UEFA 16, CAF 10, AFC 9, CONMEBOL 6, CONCACAF 6, OFC 1 = 48
