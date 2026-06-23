@@ -245,6 +245,27 @@ def test_shootout_requires_et_first():
             assert res.went_to_et, "Shootout cannot happen without ET"
 
 
+def test_shootout_has_displayed_penalty_score():
+    settings_zero_et = {
+        "simulation": {"et_lambda_scale": 0.0, "shootout_strength_coef": 0.10},
+        "match_model": {"max_goals": 0},
+    }
+    res = sample_match(
+        _dist(la=1.0, lb=1.0, dep=0.0),
+        _rng(4),
+        settings_zero_et,
+        et_allowed=True,
+    )
+    assert res.went_to_shootout
+    assert res.penalties_home is not None
+    assert res.penalties_away is not None
+    assert res.penalties_home != res.penalties_away
+    if res.winner == "home":
+        assert res.penalties_home > res.penalties_away
+    else:
+        assert res.penalties_away > res.penalties_home
+
+
 def test_et_uses_scaled_lambda():
     """
     With et_lambda_scale=0, ET goals must always be 0.

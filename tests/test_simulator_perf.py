@@ -42,7 +42,7 @@ _SETTINGS = {
 
 _SETTINGS_50K = {
     "simulation": {
-        "n_runs": 50000,
+        "n_runs": 25000,
         "random_seed": 42,
         "et_lambda_scale": 0.33,
         "shootout_strength_coef": 0.10,
@@ -294,9 +294,9 @@ def test_50k_run_wall_clock():
 
     # Sanity: champion count sums to n_runs
     champion_total = sum(v.get("champion", 0) for v in results.values())
-    assert champion_total == 50000, f"Expected 50000 champions, got {champion_total}"
+    assert champion_total == 25000, f"Expected 25000 champions, got {champion_total}"
 
-    assert elapsed < 120.0, (
-        f"50k runs took {elapsed:.1f}s — exceeds 120s budget. "
+    assert elapsed < 60.0, (
+        f"25k runs took {elapsed:.1f}s — exceeds 60s budget. "
         "Vectorise _build_grid or batch predict() before Phase 7."
     )

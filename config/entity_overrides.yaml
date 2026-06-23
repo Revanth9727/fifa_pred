@@ -1,0 +1,28 @@
+# Manual entity overrides for source-specific names.
+# Keep hard cases here instead of burying one-off fixes in ingest scripts.
+
+teams:
+  Bosnia-Herzegovina: Bosnia and Herzegovina
+  Bosnia Herzegovina: Bosnia and Herzegovina
+  Cape Verde: Cabo Verde
+  Cote d'Ivoire: Côte d'Ivoire
+  Ivory Coast: Côte d'Ivoire
+  Curacao: Curaçao
+  Czech Republic: Czechia
+  Democratic Republic of the Congo: DR Congo
+  DRC: DR Congo
+  DR Congo: DR Congo
+  Turkey: Türkiye
+  Türkiye: Türkiye
+  USA: United States
+  United States of America: United States
+
+players:
+  Scotland:
+    Andy Robertson: Andrew Robertson
+  Uruguay:
+    José Giménez: José María Giménez
+  Argentina:
+    Nicolás González: Nico González
+
+clubs: {}

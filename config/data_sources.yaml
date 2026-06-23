@@ -1,0 +1,97 @@
+# Data source registry for World Cup prediction inputs.
+# Keep this as the inventory of what exists, what refreshes, and what should
+# never be used as a model feature.
+
+sources:
+  international_results:
+    raw_files: [results.csv, shootouts.csv, goalscorers.csv]
+    provider: Kaggle / Mart Jürisoo international football results
+    format: csv
+    provides: [international_results, friendlies, qualifiers, continental_tournaments]
+    refresh: per_matchday_near_tournament
+    license_risk: medium
+    model_use: training_feature_source
+
+  world_football_elo:
+    raw_files: [elo_ratings_wc2026.csv]
+    provider: eloratings.net
+    format: csv
+    provides: [team_strength]
+    refresh: weekly_or_after_matches
+    license_risk: medium
+    model_use: training_feature_source
+
+  fifa_rankings:
+    raw_files_glob: fifa_ranking-*.csv
+    provider: FIFA / Kaggle ranking snapshots
+    format: csv
+    provides: [team_strength, simulator_tiebreak_proxy]
+    refresh: per_official_release
+    license_risk: medium
+    model_use: training_feature_source
+
+  transfermarkt_player_scores:
+    raw_files:
+      - players.csv
+      - appearances.csv
+      - player_valuations.csv
+      - competitions.csv
+      - games.csv
+      - clubs.csv
+      - club_games.csv
+      - game_lineups.csv
+      - game_events.csv
+      - transfers.csv
+      - national_teams.csv
+      - countries.csv
+    provider: Kaggle / Transfermarkt player-scores export
+    format: csv
+    provides: [player_metadata, market_values, club_minutes, club_form, competitions]
+    refresh: weekly_near_tournament
+    license_risk: high
+    model_use: training_feature_source
+
+  world_cup_squads:
+    raw_files_glob: squads_2026_*.csv
+    provider: Wikipedia page based on FIFA squad publication
+    format: csv
+    provides: [named_world_cup_squads]
+    refresh: after_final_squads_and_replacements
+    license_risk: low
+    model_use: inference_feature_anchor
+
+  world_cup_coaches:
+    raw_files_glob: coaches_2026_*.csv
+    provider: Wikipedia 2026 FIFA World Cup squads page
+    format: csv
+    provides: [national_team_coaches]
+    refresh: after_coach_changes
+    license_risk: low
+    model_use: candidate_feature_source
+
+  statsbomb_open_data:
+    raw_dir: data/raw/data
+    provider: StatsBomb Open Data
+    format: json
+    provides: [events, lineups, selected_match_context]
+    refresh: occasional
+    license_risk: low_with_attribution
+    model_use: optional_validation_or_feature_source
+
+  news_and_lineups:
+    raw_files_glob: news_*.jsonl
+    provider: GDELT / NewsAPI / official team channels
+    format: jsonl
+    provides: [injuries, availability, lineup_certainty]
+    refresh: daily_near_tournament
+    license_risk: medium
+    model_use: inference_adjustment_only
+
+  odds_benchmark:
+    raw_files_glob: odds_*.csv
+    provider: Odds API / Football-Data.co.uk
+    format: csv
+    provides: [closing_lines, futures]
+    refresh: per_match_close
+    license_risk: high
+    model_use: eval_only_never_feature

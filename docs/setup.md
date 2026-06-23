@@ -22,7 +22,7 @@ Edit the files in `config/`:
 
 - `tournament.yaml` — group structure, advancement rules, tiebreakers (from the published 2026 format).
 - `teams.yaml` — the 48 qualified teams and their group assignments.
-- `settings.yaml` — `n_runs` (default 50000), ET λ-scaling factor, adjustment clip caps, decay constants, and data paths.
+- `settings.yaml` — `n_runs` (default 25000), ET λ-scaling factor, adjustment clip caps, decay constants, and data paths.
 
 Secrets go in `.env` (gitignored):
 

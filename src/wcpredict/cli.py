@@ -578,7 +578,8 @@ def cmd_fit(args: argparse.Namespace) -> int:
         decay_table.to_csv(decay_path, index=False)
         print("Recency validation:")
         print(decay_table.to_string(index=False, float_format=lambda x: f"{x:.6f}"))
-        print(f"Selected half-life years: {'none' if selected_decay is None else selected_decay:g}")
+        _decay_label = "none" if selected_decay is None else f"{selected_decay:g}"
+        print(f"Selected half-life years: {_decay_label}")
         print(f"Wrote recency validation: {decay_path}")
     active_groups: set[str] = {
         "squad_depth", "star_power", "position_groups", "recent_form", "travel_rest", "gk"
@@ -639,7 +640,8 @@ def cmd_fit(args: argparse.Namespace) -> int:
     print(f"Fit mode: {'production-all-data' if args.production else 'validation-split'}")
     print(f"Train rows: {train_rows:,}")
     print(f"Validation rows reserved: {val_rows:,}")
-    print(f"Recency half-life years: {'none' if selected_decay is None else selected_decay:g}")
+    _decay_label = "none" if selected_decay is None else f"{selected_decay:g}"
+    print(f"Recency half-life years: {_decay_label}")
     print(f"Active feature groups: {','.join(sorted(active_groups)) or 'none'}")
     print(f"Latest fit date: {pd.to_datetime(table['date']).max().date()}")
     print(f"rho: {model.rho_:+.4f}")
@@ -689,7 +691,7 @@ def cmd_simulate(args: argparse.Namespace) -> int:
     paths = _paths(settings)
     groups = _load_groups(paths["root"])
     model = _load_or_fit_model(settings)
-    n_runs = int(args.n_runs or settings.get("simulation", {}).get("n_runs", 50000))
+    n_runs = int(args.n_runs or settings.get("simulation", {}).get("n_runs", 25000))
     seed = int(args.seed if args.seed is not None else settings.get("simulation", {}).get("random_seed", 42))
     strengths = _load_strengths(paths["raw"], groups)
     realized_results = getattr(args, "realized_results", None)

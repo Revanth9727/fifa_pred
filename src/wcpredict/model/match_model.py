@@ -75,6 +75,34 @@ def _build_team_map(
     return {t: i for i, t in enumerate(teams)}
 
 
+def _extract_beta_cov(result: Any, n_beta: int) -> np.ndarray | None:
+    """
+    Extract an approximate n_beta x n_beta covariance matrix for the feature
+    coefficients from an L-BFGS-B OptimizeResult's hess_inv.
+
+    Uses column-matvec to materialise only the top-left n_beta x n_beta block,
+    symmetrises, and projects onto the PSD cone.  Returns None on any failure.
+    """
+    if result is None or not hasattr(result, "hess_inv") or result.hess_inv is None:
+        return None
+    try:
+        H = result.hess_inv
+        n_total = H.shape[0]
+        cols: list[np.ndarray] = []
+        e = np.zeros(n_total)
+        for i in range(n_beta):
+            e[:] = 0.0
+            e[i] = 1.0
+            cols.append(H.matvec(e)[:n_beta])
+        cov = np.column_stack(cols)
+        cov = (cov + cov.T) / 2.0  # symmetrise
+        eigvals, eigvecs = np.linalg.eigh(cov)
+        eigvals = np.maximum(eigvals, 1e-12)  # project onto PSD cone
+        return eigvecs @ np.diag(eigvals) @ eigvecs.T
+    except Exception:
+        return None
+
+
 def _build_xy(features: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
     """
     Build (X_a, X_b) design matrices from a features DataFrame.
@@ -98,9 +126,6 @@ def _build_xy(features: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
     home_adv = 1.0 - neutral
 
     elo_s = _get("elo_diff", 0.0) / 400.0
-    form_a = _get("form_a", 0.5)
-    form_b = _get("form_b", 0.5)
-    form_diff = form_a - form_b
     sq_a = _get("squad_quality_rank_a", 0.5)
     sq_b = _get("squad_quality_rank_b", 0.5)
     squad_diff = sq_a - sq_b
@@ -122,13 +147,13 @@ def _build_xy(features: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
     host = _get("host_flag", 0.0)
 
     X_a = np.column_stack([
-        np.ones(n), home_adv, elo_s, form_diff, squad_diff,
+        np.ones(n), home_adv, elo_s, squad_diff,
         squad_depth_diff, star_power_diff, star_conc_diff,
         attack_value_diff, midfield_value_diff, defense_value_diff,
         club_minutes_diff, club_form_diff, rest_diff, trav_diff, gk_diff, host,
     ])
     X_b = np.column_stack([
-        np.ones(n), -home_adv, -elo_s, -form_diff, -squad_diff,
+        np.ones(n), -home_adv, -elo_s, -squad_diff,
         -squad_depth_diff, -star_power_diff, -star_conc_diff,
         -attack_value_diff, -midfield_value_diff, -defense_value_diff,
         -club_minutes_diff, -club_form_diff, -rest_diff, -trav_diff, -gk_diff, host,
@@ -257,7 +282,7 @@ class MatchModel:
         columns in ``fit()``.
     """
 
-    N_PARAMS = 17  # intercept + home_adv + feature coefficients
+    N_PARAMS = 16  # intercept + home_adv + feature coefficients
 
     def __init__(
         self,
@@ -280,6 +305,16 @@ class MatchModel:
         self.team_atk_: np.ndarray | None = None
         self.team_dfn_: np.ndarray | None = None
         self.fit_result_: Any | None = None
+        # Approximate covariance of beta (N_PARAMS x N_PARAMS) from L-BFGS-B hess_inv.
+        # Set after fit(); used by sample_coef() for parameter-uncertainty simulation.
+        self.param_cov_: np.ndarray | None = None
+        # Scratch slot for the simulator to set a perturbed coef per run.
+        # None means use self.coef_ (default, no perturbation).
+        self._perturbed_coef: np.ndarray | None = None
+        # Optional post-hoc WDL calibrators (callables: float -> float).
+        self.cal_win_: Any | None = None
+        self.cal_draw_: Any | None = None
+        self.cal_loss_: Any | None = None
         self._fitted = False
 
     def fit(self, matches: pd.DataFrame, features: pd.DataFrame) -> "MatchModel":
@@ -416,6 +451,7 @@ class MatchModel:
             self.team_atk_ = None
             self.team_dfn_ = None
 
+        self.param_cov_ = _extract_beta_cov(self.fit_result_, self.N_PARAMS)
         self._fitted = True
         return self
 
@@ -441,7 +477,6 @@ class MatchModel:
         neutral = _v("neutral_flag", 0.0)
         home_adv = 1.0 - neutral
         elo_s = _v("elo_diff", 0.0) / 400.0
-        form_diff = _v("form_a", 0.5) - _v("form_b", 0.5)
         squad_diff = _v("squad_quality_rank_a", 0.5) - _v("squad_quality_rank_b", 0.5)
         squad_depth_diff = _v("squad_depth_rank_a", 0.5) - _v("squad_depth_rank_b", 0.5)
         star_power_diff = _v("star_power_rank_a", 0.5) - _v("star_power_rank_b", 0.5)
@@ -457,20 +492,22 @@ class MatchModel:
         host = _v("host_flag", 0.0)
 
         x_a = np.array([
-            1.0, home_adv, elo_s, form_diff, squad_diff,
+            1.0, home_adv, elo_s, squad_diff,
             squad_depth_diff, star_power_diff, star_conc_diff,
             attack_value_diff, midfield_value_diff, defense_value_diff,
             club_minutes_diff, club_form_diff, rest_diff, trav_diff, gk_diff, host,
         ])
         x_b = np.array([
-            1.0, -home_adv, -elo_s, -form_diff, -squad_diff,
+            1.0, -home_adv, -elo_s, -squad_diff,
             -squad_depth_diff, -star_power_diff, -star_conc_diff,
             -attack_value_diff, -midfield_value_diff, -defense_value_diff,
             -club_minutes_diff, -club_form_diff, -rest_diff, -trav_diff, -gk_diff, host,
         ])
 
-        la_log = float(x_a @ self.coef_)
-        lb_log = float(x_b @ self.coef_)
+        _coef = getattr(self, "_perturbed_coef", None)
+        _coef = _coef if _coef is not None else self.coef_
+        la_log = float(x_a @ _coef)
+        lb_log = float(x_b @ _coef)
 
         # Apply per-team attack / defence effects when the model was fitted
         # with team names and the caller passes "team_a" / "team_b" in context.
@@ -489,6 +526,20 @@ class MatchModel:
         la = float(np.exp(la_log))
         lb = float(np.exp(lb_log))
         return GoalsDist(lambda_a=la, lambda_b=lb, dependence=self.rho_)
+
+    def sample_coef(self, rng: np.random.Generator) -> np.ndarray:
+        """
+        Draw a perturbed feature coefficient vector from the approximate
+        Gaussian posterior N(coef_, param_cov_).  If param_cov_ is None
+        (e.g. fit failed to produce a Hessian), returns a copy of coef_.
+        """
+        param_cov = getattr(self, "param_cov_", None)
+        if param_cov is None or self.coef_ is None:
+            return self.coef_.copy() if self.coef_ is not None else np.array([])
+        try:
+            return rng.multivariate_normal(self.coef_, param_cov)
+        except np.linalg.LinAlgError:
+            return self.coef_.copy()
 
     def derive_wdl(
         self,
@@ -517,7 +568,19 @@ class MatchModel:
         total = p_win + p_draw + p_loss
         if total <= 0:
             return 1 / 3, 1 / 3, 1 / 3
-        return p_win / total, p_draw / total, p_loss / total
+        pw = p_win / total
+        pd_ = p_draw / total
+        pl = p_loss / total
+
+        if getattr(self, "cal_win_", None) is not None:
+            pw = float(np.clip(self.cal_win_(np.array([pw]))[0], 0.0, 1.0))
+            pd_ = float(np.clip(self.cal_draw_(np.array([pd_]))[0], 0.0, 1.0))
+            pl = float(np.clip(self.cal_loss_(np.array([pl]))[0], 0.0, 1.0))
+            total2 = pw + pd_ + pl
+            if total2 > 0:
+                pw, pd_, pl = pw / total2, pd_ / total2, pl / total2
+
+        return pw, pd_, pl
 
 
 def derive_wdl(

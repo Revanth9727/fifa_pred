@@ -274,12 +274,14 @@ def _ko_round_vectorized(
 
     winners: list[str] = []
     losers:  list[str] = []
+    records: list[tuple[str, str, int, int]] = []
     for i, (home, away) in enumerate(matchups):
         if total[i, 0] >= total[i, 1]:
             winners.append(home); losers.append(away)
         else:
             winners.append(away); losers.append(home)
-    return winners, losers
+        records.append((home, away, int(total[i, 0]), int(total[i, 1])))
+    return winners, losers, records
 
 
 def _build_context(
@@ -396,6 +398,39 @@ def _build_grids_for_matchups(
 
 
 # ---------------------------------------------------------------------------
+# In-tournament Elo update helpers
+# ---------------------------------------------------------------------------
+
+def _elo_delta(
+    elo_a: float,
+    elo_b: float,
+    score_a: int,
+    score_b: int,
+    K: float = 40.0,
+) -> float:
+    """Standard Elo delta for team A given a match result."""
+    expected_a = 1.0 / (1.0 + 10.0 ** ((elo_b - elo_a) / 400.0))
+    actual_a = 1.0 if score_a > score_b else (0.5 if score_a == score_b else 0.0)
+    return K * (actual_a - expected_a)
+
+
+def _update_strengths(
+    strengths: dict[str, float],
+    records: list[tuple[str, str, int, int]],
+    K: float,
+) -> None:
+    """Update Elo strengths in-place from match records (home, away, g_home, g_away)."""
+    for home, away, gh, ga in records:
+        delta = _elo_delta(
+            strengths.get(home, 1600.0),
+            strengths.get(away, 1600.0),
+            gh, ga, K,
+        )
+        strengths[home] = strengths.get(home, 1600.0) + delta
+        strengths[away] = strengths.get(away, 1600.0) - delta
+
+
+# ---------------------------------------------------------------------------
 # GoalsDist predict cache
 # Keyed on (context tuple, model id) so predictions are not rebuilt per match
 # in the inner loop when the context is identical.
@@ -454,6 +489,7 @@ class TournamentSimulator:
         strengths: dict[str, float] | None = None,
         realized_results: dict[tuple[str, str], tuple[int, int]] | None = None,
         team_features: dict[str, dict[str, float]] | None = None,
+        elo_k: float = 40.0,
     ) -> None:
         if settings is None:
             settings = _load_yaml("settings.yaml")
@@ -464,6 +500,7 @@ class TournamentSimulator:
         self.strengths: dict[str, float] = strengths if strengths is not None else _DEFAULT_STRENGTHS
         self.realized_results: dict[tuple[str, str], tuple[int, int]] = realized_results or {}
         self.team_features: dict[str, dict[str, float]] = team_features or {}
+        self.elo_k: float = float(elo_k)
 
     def run(self, n_runs: int | None = None, seed: int | None = None) -> dict[str, dict[str, int]]:
         """
@@ -476,15 +513,28 @@ class TournamentSimulator:
             reached AT LEAST that stage.
         """
         sim_cfg = self.settings.get("simulation", {})
-        n = int(n_runs if n_runs is not None else sim_cfg.get("n_runs", 50000))
+        n = int(n_runs if n_runs is not None else sim_cfg.get("n_runs", 25000))
         s = int(seed if seed is not None else sim_cfg.get("random_seed", 42))
 
         rng = np.random.default_rng(s)
         counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-        predict_cache: dict = {}   # shared across all runs; keyed on (model_id, ctx_tuple)
+
+        use_param_uncertainty = getattr(self.model, "param_cov_", None) is not None
+        # Group-stage predictions use pre-tournament Elo (identical across runs) → safe to share.
+        shared_cache: dict = {}
 
         for _ in range(n):
-            self._run_once(rng, counts, predict_cache)
+            run_strengths = dict(self.strengths)  # fresh mutable copy — updated per run
+            if use_param_uncertainty:
+                # Each run draws fresh coefficients → predictions differ → no cross-run cache.
+                self.model._perturbed_coef = self.model.sample_coef(rng)
+                per_run_cache: dict = {}
+            else:
+                per_run_cache = shared_cache
+            self._run_once(rng, counts, per_run_cache, run_strengths)
+
+        if use_param_uncertainty:
+            self.model._perturbed_coef = None  # restore clean state
 
         return {team: dict(stage_counts) for team, stage_counts in counts.items()}
 
@@ -493,24 +543,35 @@ class TournamentSimulator:
         rng: np.random.Generator,
         counts: dict[str, dict[str, int]],
         predict_cache: dict,
+        run_strengths: dict,
     ) -> None:
         # ---- Group stage (vectorized: 6 matches per group in one numpy op) ----
         standings: dict[str, list[str]] = {}
         third_records: list[tuple[str, str, dict]] = []
+        all_group_records: list[tuple[str, str, int, int]] = []
 
         for grp, teams in self.groups.items():
             ranked, records = _play_group_stage(
                 grp, teams, self.model, rng, self.settings,
-                self.adjustments, predict_cache, self.strengths,
+                self.adjustments, predict_cache, run_strengths,
                 self.realized_results,
                 self.team_features,
             )
             standings[grp] = ranked
+            all_group_records.extend(records)
             third = ranked[2]
             third_records.append((third, grp, _team_stats(third, records)))
 
+        # ---- Update Elo from group stage before knockouts ----
+        if self.elo_k > 0.0:
+            _update_strengths(run_strengths, all_group_records, self.elo_k)
+            # Knockout predictions use updated Elo → can't reuse the group-stage cache.
+            ko_cache: dict = {}
+        else:
+            ko_cache = predict_cache
+
         # ---- Best-8 third-placed teams ----
-        top8 = _rank_third_placed(third_records, self.strengths)
+        top8 = _rank_third_placed(third_records, run_strengths)
         qualifying_groups = {g for _, g in top8}
 
         # ---- Group exits ----
@@ -523,14 +584,16 @@ class TournamentSimulator:
         r32 = build_r32(standings, qualifying_groups)
         current: list[tuple[str, str]] = [(m.home, m.away) for m in r32]
 
-        # ---- Knockout rounds (vectorized per round) ----
+        # ---- Knockout rounds (vectorized per round, Elo updated between rounds) ----
         semi_losers: list[str] = []
         for round_name in ["round_of_32", "round_of_16", "quarter_final", "semi_final"]:
-            winners, losers = _ko_round_vectorized(
+            winners, losers, ko_recs = _ko_round_vectorized(
                 current, self.model, rng, self.settings,
-                predict_cache, self.strengths, self.adjustments,
+                ko_cache, run_strengths, self.adjustments,
                 self.team_features,
             )
+            if self.elo_k > 0.0:
+                _update_strengths(run_strengths, ko_recs, self.elo_k)
             if round_name == "semi_final":
                 semi_losers = losers
             else:
@@ -540,10 +603,10 @@ class TournamentSimulator:
 
         # ---- 3rd-place playoff ----
         if len(semi_losers) == 2:
-            w3, l3 = _ko_round_vectorized(
+            w3, l3, _ = _ko_round_vectorized(
                 [(semi_losers[0], semi_losers[1])],
                 self.model, rng, self.settings,
-                predict_cache, self.strengths, self.adjustments,
+                ko_cache, run_strengths, self.adjustments,
                 self.team_features,
             )
             counts[w3[0]]["third_place"] += 1
@@ -554,10 +617,10 @@ class TournamentSimulator:
             finalists = list(current[0])
             for f in finalists:
                 counts[f]["finalist"] += 1
-            w_final, _ = _ko_round_vectorized(
+            w_final, _, _ = _ko_round_vectorized(
                 [tuple(finalists)],
                 self.model, rng, self.settings,
-                predict_cache, self.strengths, self.adjustments,
+                ko_cache, run_strengths, self.adjustments,
                 self.team_features,
             )
             counts[w_final[0]]["champion"] += 1

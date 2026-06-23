@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>World Cup Predictor</title>
+    <link rel="stylesheet" href="/static/styles.css?v=10">
+  </head>
+  <body>
+    <main class="appShell">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Interactive 2026 Tournament Simulator</p>
+          <h1>Play the World Cup</h1>
+          <p id="statusLine">Simulate every match, one click at a time.</p>
+        </div>
+        <div class="heroActions">
+          <button id="resetBtn" class="ghostButton">Reset</button>
+          <button id="simGroupBtn" class="ghostButton">Simulate Group Stage</button>
+          <button id="refreshBtn" class="ghostButton">Refresh Real Results</button>
+          <button id="retrainBtn" class="ghostButton retrainBtn">Retrain Model</button>
+        </div>
+        <p id="retrainStatus" class="retrainStatus" style="display:none"></p>
+      </section>
+
+      <section class="scoreboard" id="scoreboard"></section>
+
+      <nav class="tabs" aria-label="Views">
+        <button class="tab active" data-tab="play">Play</button>
+        <button class="tab" data-tab="results">Actual Results</button>
+        <button class="tab" data-tab="montecarlo">Monte Carlo</button>
+        <button class="tab" data-tab="metrics">Metrics</button>
+      </nav>
+
+      <section id="play" class="panel active">
+        <div class="sectionHeader">
+          <div>
+            <h2>Group Stage</h2>
+            <p class="sectionSub">Cards unlock the table. Simulate matches to decide who advances.</p>
+          </div>
+          <input id="searchBox" type="search" placeholder="Search team">
+        </div>
+        <div id="groupCards" class="groupGrid"></div>
+
+        <div class="sectionHeader bracketHeader">
+          <div>
+            <h2>Knockout Bracket</h2>
+            <p class="sectionSub">Rounds unlock only after prior matches are played.</p>
+          </div>
+          <div id="championBanner" class="championBanner">Champion hidden</div>
+        </div>
+        <div id="bracketBoard" class="bracketBoard"></div>
+      </section>
+
+      <section id="results" class="panel">
+        <div class="sectionHeader">
+          <h2>Actual Results Feed</h2>
+          <div id="jobState" class="jobState">Idle</div>
+        </div>
+
+        <!-- Upcoming / Live Matches -->
+        <div id="upcomingSection" class="metricSection" style="display:none">
+          <h3 class="metricSectionTitle">Upcoming &amp; Live Matches</h3>
+          <div id="upcomingCards" class="upcomingGrid"></div>
+        </div>
+
+        <!-- Completed Results -->
+        <div class="metricSection">
+          <h3 class="metricSectionTitle">Completed Results</h3>
+          <div id="completedSummary" class="completedSummary" style="display:none"></div>
+          <div class="tableWrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Group</th>
+                  <th>Home</th>
+                  <th>Score</th>
+                  <th>Away</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="resultRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+      <section id="metrics" class="panel">
+        <div class="sectionHeader">
+          <div>
+            <h2>Simulation Quality</h2>
+            <p class="sectionSub">Statistical properties of the Monte Carlo runs.</p>
+          </div>
+        </div>
+        <div id="simQualityCards" class="metricsGrid"></div>
+
+        <div class="metricSection">
+          <h3 class="metricSectionTitle">Convergence — Standard Error vs Simulations</h3>
+          <p class="metricSectionSub">SE for the top 5 teams' champion probability. Current run marked in gold.</p>
+          <div id="convergenceChart" class="chartBox"></div>
+        </div>
+
+        <div class="metricSection">
+          <h3 class="metricSectionTitle">Per-team Champion Probability ± SE</h3>
+          <div class="tableWrap">
+            <table>
+              <thead><tr><th>Team</th><th>Champion %</th><th>Std Error</th><th>95% Confidence Interval</th></tr></thead>
+              <tbody id="seTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="sliceMetricsSection" style="display:none">
+          <div class="sectionHeader metricsDivider">
+            <div>
+              <h2>Slice Calibration</h2>
+              <p class="sectionSub">WDL + goals bias by Elo gap and venue type — ⚠ flag = |W bias| &gt; 8 pp.</p>
+            </div>
+          </div>
+          <div class="tableWrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Bucket</th><th>n</th>
+                  <th>Pred W%</th><th>Actual W%</th><th>W Bias</th>
+                  <th>Pred D%</th><th>Actual D%</th>
+                  <th>Goals Bias</th>
+                  <th>Brier</th><th>Log Loss</th><th>Flag</th>
+                </tr>
+              </thead>
+              <tbody id="sliceTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="modelQualitySection" style="display:none">
+          <div class="sectionHeader metricsDivider">
+            <div>
+              <h2>Model Quality</h2>
+              <p class="sectionSub">Scored against the evaluation dataset.</p>
+            </div>
+            <span id="metricsTimestamp" class="jobState"></span>
+          </div>
+          <div id="modelQualityCards" class="metricsGrid"></div>
+          <div class="metricSection">
+            <h3 class="metricSectionTitle">Calibration Curve</h3>
+            <p class="metricSectionSub">Points on the dashed diagonal are perfectly calibrated. Dot size = sample count.</p>
+            <div id="calibrationChart" class="chartBox calibrationBox"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="montecarlo" class="panel">
+        <div class="sectionHeader">
+          <div>
+            <h2>Monte Carlo Simulation</h2>
+            <p class="sectionSub">Run N simulations to estimate each team's tournament outcome probabilities.</p>
+          </div>
+          <span id="simJobState" class="jobState">Idle</span>
+        </div>
+        <div class="simControls">
+          <label class="simLabel">
+            Simulations
+            <input id="nRunsInput" type="number" value="25000" min="1000" max="500000" step="5000">
+          </label>
+          <button id="runSimBtn" class="simRunBtn">Run Simulation</button>
+        </div>
+        <div class="tableWrap">
+          <table id="simResultsTable">
+            <thead>
+              <tr>
+                <th>Team</th>
+                <th>Champion</th>
+                <th>Finalist</th>
+                <th>Semi-final</th>
+                <th>Quarter-final</th>
+                <th>Round of 16</th>
+                <th>Advance</th>
+              </tr>
+            </thead>
+            <tbody id="simResultRows"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <aside id="detailDrawer" class="drawer" aria-hidden="true">
+      <div class="drawerHeader">
+        <h2 id="drawerTitle">Details</h2>
+        <button id="drawerClose" class="ghostButton">Close</button>
+      </div>
+      <div id="drawerBody" class="drawerBody"></div>
+    </aside>
+
+    <div id="chatWidget" class="chatWidget">
+      <div id="chatPanel" class="chatPanel" aria-hidden="true">
+        <div class="chatHeader">
+          <div class="chatHeaderTitle">
+            <span class="chatHeaderIcon">WC</span>
+            <span>Predictor AI</span>
+          </div>
+          <button id="chatClose" class="chatCloseBtn" type="button" aria-label="Close chat">x</button>
+        </div>
+        <div class="chatSubtitle">Ask about predictions, probabilities, and the model</div>
+        <div id="chatMessages" class="chatMessages">
+          <div class="chatMsg chatMsgAssistant">
+            <div class="chatMsgBubble">
+              Hi. I can answer questions about the 2026 World Cup prediction model: champion odds, why a team is favored, how the model works, real results, and upcoming matches.
+            </div>
+          </div>
+        </div>
+        <div class="chatInputRow">
+          <input id="chatInput" class="chatInput" type="text" placeholder="Ask about the model" autocomplete="off">
+          <button id="chatSend" class="chatSendBtn" type="button" aria-label="Send message">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="17" height="17" aria-hidden="true">
+              <line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <button id="chatBubble" class="chatBubble" type="button" title="Ask about the model" aria-label="Open AI assistant" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="26" height="26">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+      </button>
+    </div>
+
+    <script src="/static/app.js?v=10"></script>
+  </body>
+</html>

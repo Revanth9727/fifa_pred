@@ -4,6 +4,7 @@ Pull and freeze the 2026 World Cup squad snapshot from Wikipedia.
 
 Output:
   data/raw/squads_2026_<cutoff>.csv
+  data/raw/coaches_2026_<cutoff>.csv
   outputs/squad_unmatched_<cutoff>.csv
 
 The resolver is deterministic/offline by default. If ANTHROPIC_API_KEY is set,
@@ -93,18 +94,21 @@ def _read_players() -> pd.DataFrame:
         return pd.read_csv(path, compression="gzip")
 
 
-def _parse_team_tables() -> pd.DataFrame:
+def _fetch_soup() -> BeautifulSoup:
     response = requests.get(
         WIKI_URL,
         headers={"User-Agent": "wcpredict-squad-freeze/0.1 (research; contact local)"},
         timeout=30,
     )
     response.raise_for_status()
+    return BeautifulSoup(response.text, "html.parser")
+
+
+def _parse_team_tables(soup: BeautifulSoup) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     canonical = load_canonical_teams(ROOT / "config" / "teams.yaml")
     resolve_team, _ = make_resolver(canonical, TEAM_ALIASES)
     canonical_keys = {_norm(name): name for name in canonical}
-    soup = BeautifulSoup(response.text, "html.parser")
 
     current_team: str | None = None
     for node in soup.find_all(["h2", "h3", "h4", "table"]):
@@ -162,6 +166,45 @@ def _parse_team_tables() -> pd.DataFrame:
     return out
 
 
+def _parse_coaches(soup: BeautifulSoup) -> pd.DataFrame:
+    rows: list[dict[str, str]] = []
+    canonical = load_canonical_teams(ROOT / "config" / "teams.yaml")
+    resolve_team, _ = make_resolver(canonical, TEAM_ALIASES)
+    canonical_keys = {_norm(name): name for name in canonical}
+
+    current_team: str | None = None
+    seen: set[str] = set()
+    for node in soup.find_all(["h2", "h3", "h4", "p", "table"]):
+        if node.name in {"h2", "h3", "h4"}:
+            heading = _clean(node.get_text(" "))
+            heading = heading.replace("[edit]", "").strip()
+            resolved_heading = resolve_team(heading)
+            current_team = resolved_heading if _norm(resolved_heading) in canonical_keys else None
+            continue
+        if current_team is None:
+            continue
+        if node.name == "table":
+            # Coach lines appear before the squad table in each team section.
+            current_team = None
+            continue
+
+        text = _clean(node.get_text(" "))
+        match = re.search(r"\bCoach:\s*(.+)$", text)
+        if not match or current_team in seen:
+            continue
+        coach_name = _clean(match.group(1))
+        coach_name = re.sub(r"\s*\[[^\]]+\]", "", coach_name).strip()
+        if coach_name:
+            rows.append({
+                "team": current_team,
+                "coach": coach_name,
+                "source": WIKI_URL,
+            })
+            seen.add(current_team)
+
+    return pd.DataFrame(rows).sort_values("team").reset_index(drop=True)
+
+
 def _resolve_players(squads: pd.DataFrame, players: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     p = players.copy()
     p["_name_key"] = p["name"].map(_norm)
@@ -184,6 +227,22 @@ def _resolve_players(squads: pd.DataFrame, players: pd.DataFrame) -> tuple[pd.Da
             if close:
                 candidates = by_name[by_name["_name_key"] == close[0]]
                 match_method = "fuzzy"
+        if candidates.empty:
+            # Try reversing surname-first → given-first (e.g. "Son Heung-min" → "Heung-min Son")
+            parts = key.split()
+            if len(parts) >= 2:
+                reversed_key = " ".join(parts[1:] + [parts[0]])
+                rev_candidates = p[p["_name_key"] == reversed_key]
+                if rev_candidates.empty:
+                    close2 = difflib.get_close_matches(reversed_key, name_keys, n=1, cutoff=0.91)
+                    if close2:
+                        rev_candidates = by_name[by_name["_name_key"] == close2[0]]
+                        match_method = "fuzzy-reversed"
+                    else:
+                        match_method = "reversed"
+                else:
+                    match_method = "reversed"
+                candidates = rev_candidates
         if not candidates.empty:
             same_country = candidates[candidates["_country_key"] == team_key]
             chosen_pool = same_country if not same_country.empty else candidates
@@ -232,9 +291,11 @@ def main(argv: list[str] | None = None) -> int:
 
     settings = _settings()
     cutoff = _cutoff(settings, args.cutoff)
-    squads = _parse_team_tables()
+    soup = _fetch_soup()
+    squads = _parse_team_tables(soup)
     if squads.empty:
         raise RuntimeError("No squad tables parsed from Wikipedia")
+    coaches = _parse_coaches(soup)
     players = _read_players()
     resolved, unmatched = _resolve_players(squads, players)
 
@@ -243,6 +304,10 @@ def main(argv: list[str] | None = None) -> int:
     out_path = out_dir / f"squads_2026_{cutoff}.csv"
     resolved.insert(0, "cutoff", cutoff)
     resolved.to_csv(out_path, index=False)
+    coaches_path = out_dir / f"coaches_2026_{cutoff}.csv"
+    if not coaches.empty:
+        coaches.insert(0, "cutoff", cutoff)
+    coaches.to_csv(coaches_path, index=False)
 
     report_dir = ROOT / "outputs"
     report_dir.mkdir(parents=True, exist_ok=True)
@@ -250,10 +315,12 @@ def main(argv: list[str] | None = None) -> int:
     unmatched.to_csv(unmatched_path, index=False)
 
     print(f"Wrote squad snapshot: {out_path} ({len(resolved):,} resolved rows)")
+    print(f"Wrote coach snapshot: {coaches_path} ({len(coaches):,} rows)")
     print(f"Wrote unmatched report: {unmatched_path} ({len(unmatched):,} unmatched rows)")
     if not unmatched.empty and "high_value_flag" in unmatched.columns:
         print(f"High-value unmatched candidates: {int(unmatched['high_value_flag'].sum())}")
     print("Teams parsed:", squads["team"].nunique())
+    print("Coaches parsed:", coaches["team"].nunique() if not coaches.empty else 0)
     return 0
 
 

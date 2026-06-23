@@ -17,7 +17,12 @@ dependencies = [
     "pyyaml>=6.0",         # config
     "matplotlib>=3.8",     # reliability diagram
     "requests>=2.31",      # data ingestion (the only networked module)
+    "beautifulsoup4>=4.12", # Wikipedia squad/coach table parsing
+    "lxml>=5.0",           # pandas.read_html parser for Wikipedia tables
+    "fastapi>=0.115",      # production UI/API server
+    "uvicorn>=0.30",       # ASGI server for the UI
     "anthropic>=0.40",     # Claude API: extraction, entity resolution, narration
+    "python-dotenv>=1.0",  # load .env for local secrets
 ]
 
 [project.optional-dependencies]
@@ -31,9 +36,13 @@ xg = [
 
 [project.scripts]
 wcpredict = "wcpredict.cli:main"
+wcpredict-ui = "wcpredict.web.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"wcpredict.web" = ["static/*"]
 
 [tool.pytest.ini_options]
 markers = [

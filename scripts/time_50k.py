@@ -29,7 +29,7 @@ from wcpredict.sim.simulator import TournamentSimulator
 # ---------------------------------------------------------------------------
 SETTINGS = {
     "simulation": {
-        "n_runs": 50000,
+        "n_runs": 25000,
         "random_seed": 42,
         "et_lambda_scale": 0.33,
         "shootout_strength_coef": 0.10,
@@ -88,20 +88,20 @@ champion_total = sum(v.get("champion", 0) for v in results.values())
 print()
 print(f"  Wall-clock:        {elapsed:.2f}s")
 print(f"  Teams in results:  {len(results)} / {len(all_teams)}")
-print(f"  Champion sum:      {champion_total} / 50000")
+print(f"  Champion sum:      {champion_total} / 25000")
 if missing:
     print(f"  Missing teams:     {missing}")
 print()
 
-ok = (not missing) and (champion_total == 50000) and (elapsed < 120.0)
+ok = (not missing) and (champion_total == 25000) and (elapsed < 60.0)
 if ok:
     print("PASS — 50k runs complete, all teams present, champion sum correct.")
     sys.exit(0)
 else:
     if elapsed >= 120.0:
-        print(f"FAIL — wall-clock {elapsed:.1f}s exceeds 120s budget.")
+        print(f"FAIL — wall-clock {elapsed:.1f}s exceeds 60s budget.")
     if missing:
         print(f"FAIL — teams missing from results: {missing}")
-    if champion_total != 50000:
-        print(f"FAIL — champion_total={champion_total}, expected 50000.")
+    if champion_total != 25000:
+        print(f"FAIL — champion_total={champion_total}, expected 25000.")
     sys.exit(1)

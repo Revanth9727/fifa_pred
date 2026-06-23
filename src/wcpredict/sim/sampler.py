@@ -37,6 +37,8 @@ class MatchResult:
     goals_away: int
     et_goals_home: int = 0
     et_goals_away: int = 0
+    penalties_home: int | None = None
+    penalties_away: int | None = None
     went_to_et: bool = False
     went_to_shootout: bool = False
     winner: str = ""   # "home" | "away" | "" (draw, group-stage only)
@@ -194,6 +196,25 @@ def _resolve_shootout(
     return "home" if rng.random() < p_home else "away"
 
 
+def _sample_shootout_score(
+    winner: str,
+    rng: np.random.Generator,
+) -> tuple[int, int]:
+    """
+    Sample a plausible displayed penalty score.
+
+    This is presentation/state detail, not a model feature: the shootout winner
+    is decided by _resolve_shootout(), then this generates a scoreline consistent
+    with that winner.
+    """
+    losing_score = int(rng.choice([3, 4, 5], p=[0.18, 0.58, 0.24]))
+    margin = int(rng.choice([1, 2], p=[0.88, 0.12]))
+    winning_score = losing_score + margin
+    if winner == "home":
+        return winning_score, losing_score
+    return losing_score, winning_score
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -277,4 +298,5 @@ def sample_match(
     # Penalty shootout
     result.went_to_shootout = True
     result.winner = _resolve_shootout(strength_diff, rng, coef=so_coef)
+    result.penalties_home, result.penalties_away = _sample_shootout_score(result.winner, rng)
     return result

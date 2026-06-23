@@ -166,9 +166,10 @@ def _squad_value_aggregates(df: pd.DataFrame) -> pd.DataFrame:
         rows.append({
             "team": team,
             "squad_depth_value": top18,
+            "squad_quality_value": top5,
             "star_power_value": top3,
             "star_top1_value": top1,
-            "star_concentration": top3 / top18 if top18 > 0 else np.nan,
+            "star_concentration": top3 / top18 if top18 > 0 and len(vals) >= 15 else np.nan,
             "attack_value": _pos_sum("attack"),
             "midfield_value": _pos_sum("midfield"),
             "defense_value": _pos_sum("defense"),
@@ -177,7 +178,7 @@ def _squad_value_aggregates(df: pd.DataFrame) -> pd.DataFrame:
     if out.empty:
         return out
     out["squad_depth_rank"] = _rank_signal(out.set_index("team")["squad_depth_value"]).to_numpy()
-    out["squad_quality_rank"] = out["squad_depth_rank"]
+    out["squad_quality_rank"] = _rank_signal(out.set_index("team")["squad_quality_value"]).to_numpy()
     out["star_power_rank"] = _rank_signal(out.set_index("team")["star_power_value"]).to_numpy()
     out["attack_value_rank"] = _rank_signal(out.set_index("team")["attack_value"]).to_numpy()
     out["midfield_value_rank"] = _rank_signal(out.set_index("team")["midfield_value"]).to_numpy()
