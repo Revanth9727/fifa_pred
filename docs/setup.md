@@ -9,7 +9,7 @@
 ## Install
 
 ```bash
-git clone <repo> && cd worldcup-predictor
+git clone https://github.com/Revanth9727/fifa_pred.git && cd fifa_pred
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 ```

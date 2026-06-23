@@ -581,9 +581,7 @@ def cmd_fit(args: argparse.Namespace) -> int:
         _decay_label = "none" if selected_decay is None else f"{selected_decay:g}"
         print(f"Selected half-life years: {_decay_label}")
         print(f"Wrote recency validation: {decay_path}")
-    active_groups: set[str] = {
-        "squad_depth", "star_power", "position_groups", "recent_form", "travel_rest", "gk"
-    }
+    active_groups: set[str] = set()
     if args.ablate:
         ablation_table, active_groups = _ablation_ladder(
             table,

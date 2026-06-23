@@ -10,9 +10,7 @@ sys.path.insert(0, str(ROOT / "src"))
 SPLIT_DATE = pd.Timestamp("2022-01-01")
 FEATURE_NAMES = [
     "intercept","home_adv","elo",
-    "squad_diff","squad_depth_diff","star_power_diff","star_conc_diff",
-    "attack_diff","midfield_diff","defense_diff",
-    "club_min_diff","club_form_diff","rest_diff","trav_diff","gk_diff","host",
+    "attack_diff","midfield_diff","defense_diff","host",
 ]
 
 with open(ROOT / "outputs" / "match_model.pkl", "rb") as f:

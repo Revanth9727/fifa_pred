@@ -126,37 +126,18 @@ def _build_xy(features: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
     home_adv = 1.0 - neutral
 
     elo_s = _get("elo_diff", 0.0) / 400.0
-    sq_a = _get("squad_quality_rank_a", 0.5)
-    sq_b = _get("squad_quality_rank_b", 0.5)
-    squad_diff = sq_a - sq_b
-    squad_depth_diff = _get("squad_depth_rank_a", 0.5) - _get("squad_depth_rank_b", 0.5)
-    star_power_diff = _get("star_power_rank_a", 0.5) - _get("star_power_rank_b", 0.5)
-    star_conc_diff = _get("star_concentration_a", 0.5) - _get("star_concentration_b", 0.5)
     attack_value_diff = _get("attack_value_rank_a", 0.5) - _get("attack_value_rank_b", 0.5)
     midfield_value_diff = _get("midfield_value_rank_a", 0.5) - _get("midfield_value_rank_b", 0.5)
     defense_value_diff = _get("defense_value_rank_a", 0.5) - _get("defense_value_rank_b", 0.5)
-    club_minutes_diff = _get("club_minutes_rank_a", 0.5) - _get("club_minutes_rank_b", 0.5)
-    club_form_diff = _get("club_form_rank_a", 0.5) - _get("club_form_rank_b", 0.5)
-    gk_diff = _get("gk_rating_a", 0.5) - _get("gk_rating_b", 0.5)
-    rest_a = _get("rest_days_a", 0.0)
-    rest_b = _get("rest_days_b", 0.0)
-    rest_diff = np.clip((rest_a - rest_b) / 14.0, -2.0, 2.0)
-    trav_a = _get("travel_km_a", 0.0)
-    trav_b = _get("travel_km_b", 0.0)
-    trav_diff = np.clip((trav_a - trav_b) / 5000.0, -2.0, 2.0)
     host = _get("host_flag", 0.0)
 
     X_a = np.column_stack([
-        np.ones(n), home_adv, elo_s, squad_diff,
-        squad_depth_diff, star_power_diff, star_conc_diff,
-        attack_value_diff, midfield_value_diff, defense_value_diff,
-        club_minutes_diff, club_form_diff, rest_diff, trav_diff, gk_diff, host,
+        np.ones(n), home_adv, elo_s,
+        attack_value_diff, midfield_value_diff, defense_value_diff, host,
     ])
     X_b = np.column_stack([
-        np.ones(n), -home_adv, -elo_s, -squad_diff,
-        -squad_depth_diff, -star_power_diff, -star_conc_diff,
-        -attack_value_diff, -midfield_value_diff, -defense_value_diff,
-        -club_minutes_diff, -club_form_diff, -rest_diff, -trav_diff, -gk_diff, host,
+        np.ones(n), -home_adv, -elo_s,
+        -attack_value_diff, -midfield_value_diff, -defense_value_diff, host,
     ])
     return X_a, X_b
 
@@ -282,7 +263,7 @@ class MatchModel:
         columns in ``fit()``.
     """
 
-    N_PARAMS = 16  # intercept + home_adv + feature coefficients
+    N_PARAMS = 7   # intercept + home_adv + elo + attack_diff + midfield_diff + defense_diff + host
 
     def __init__(
         self,
@@ -477,31 +458,18 @@ class MatchModel:
         neutral = _v("neutral_flag", 0.0)
         home_adv = 1.0 - neutral
         elo_s = _v("elo_diff", 0.0) / 400.0
-        squad_diff = _v("squad_quality_rank_a", 0.5) - _v("squad_quality_rank_b", 0.5)
-        squad_depth_diff = _v("squad_depth_rank_a", 0.5) - _v("squad_depth_rank_b", 0.5)
-        star_power_diff = _v("star_power_rank_a", 0.5) - _v("star_power_rank_b", 0.5)
-        star_conc_diff = _v("star_concentration_a", 0.5) - _v("star_concentration_b", 0.5)
         attack_value_diff = _v("attack_value_rank_a", 0.5) - _v("attack_value_rank_b", 0.5)
         midfield_value_diff = _v("midfield_value_rank_a", 0.5) - _v("midfield_value_rank_b", 0.5)
         defense_value_diff = _v("defense_value_rank_a", 0.5) - _v("defense_value_rank_b", 0.5)
-        club_minutes_diff = _v("club_minutes_rank_a", 0.5) - _v("club_minutes_rank_b", 0.5)
-        club_form_diff = _v("club_form_rank_a", 0.5) - _v("club_form_rank_b", 0.5)
-        gk_diff = _v("gk_rating_a", 0.5) - _v("gk_rating_b", 0.5)
-        rest_diff = float(np.clip((_v("rest_days_a", 0.0) - _v("rest_days_b", 0.0)) / 14.0, -2.0, 2.0))
-        trav_diff = float(np.clip((_v("travel_km_a", 0.0) - _v("travel_km_b", 0.0)) / 5000.0, -2.0, 2.0))
         host = _v("host_flag", 0.0)
 
         x_a = np.array([
-            1.0, home_adv, elo_s, squad_diff,
-            squad_depth_diff, star_power_diff, star_conc_diff,
-            attack_value_diff, midfield_value_diff, defense_value_diff,
-            club_minutes_diff, club_form_diff, rest_diff, trav_diff, gk_diff, host,
+            1.0, home_adv, elo_s,
+            attack_value_diff, midfield_value_diff, defense_value_diff, host,
         ])
         x_b = np.array([
-            1.0, -home_adv, -elo_s, -squad_diff,
-            -squad_depth_diff, -star_power_diff, -star_conc_diff,
-            -attack_value_diff, -midfield_value_diff, -defense_value_diff,
-            -club_minutes_diff, -club_form_diff, -rest_diff, -trav_diff, -gk_diff, host,
+            1.0, -home_adv, -elo_s,
+            -attack_value_diff, -midfield_value_diff, -defense_value_diff, host,
         ])
 
         _coef = getattr(self, "_perturbed_coef", None)
