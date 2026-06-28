@@ -521,7 +521,9 @@ button:disabled {
 .bCard.bCardReady { border-color: rgba(0,167,165,0.5); outline: 2px solid rgba(0,167,165,0.18); }
 .bCard.bCardPlayed { background: linear-gradient(160deg, #f0fff8, #ffffff); }
 .bCard.bCardLocked { opacity: 0.48; filter: grayscale(0.4); }
-.bCard.bCardTbd    { opacity: 0.35; cursor: default; }
+.bCard.bCardTbd     { opacity: 0.35; cursor: default; }
+.bCard.bCardPending { background: rgba(255,255,255,0.55); border: 1px dashed rgba(7,27,37,0.22); cursor: default; }
+.bCard.bCardPending:hover { box-shadow: 0 3px 10px rgba(7,27,37,0.10); }
 
 .bTeamRow {
   display: flex;
@@ -546,6 +548,33 @@ button:disabled {
   white-space: nowrap;
   font-weight: 700;
   color: var(--ink);
+}
+.bSlotLabel {
+  font-weight: 800;
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+.bConfirmed {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+  color: var(--ink);
+  font-style: italic;
+}
+.bCard.bCardEmpty { opacity: 0.2; }
+.bLikely {
+  font-size: 10px;
+  color: var(--teal);
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
 .bScr {
   flex-shrink: 0;

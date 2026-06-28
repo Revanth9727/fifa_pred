@@ -377,10 +377,17 @@ class PredictionService:
                     for match in sorted(matches, key=lambda row: row["match_no"])
                     if match["stage"] == current_stage
                 ]
-                matchups = [
-                    (winners[i], winners[i + 1], f"Winner {current_stage} {i + 1} vs Winner {current_stage} {i + 2}")
-                    for i in range(0, len(winners), 2)
-                ]
+                if current_stage == "Round of 32":
+                    _R16_PAIRS = [(0,2),(11,13),(5,4),(10,12),(1,3),(8,15),(7,6),(9,14)]
+                    matchups = [
+                        (winners[i], winners[j], f"Winner Round of 32 {i+1} vs Winner Round of 32 {j+1}")
+                        for i, j in _R16_PAIRS
+                    ]
+                else:
+                    matchups = [
+                        (winners[i], winners[i + 1], f"Winner {current_stage} {i + 1} vs Winner {current_stage} {i + 2}")
+                        for i in range(0, len(winners), 2)
+                    ]
                 self._append_round(
                     state,
                     stage=next_stage,

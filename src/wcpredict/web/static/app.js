@@ -17,6 +17,18 @@ const teamColors = {
   Belgium: ["#111111", "#fae042"], Croatia: ["#f00000", "#171796"],
   Australia: ["#004b3a", "#ffcd00"], "South Korea": ["#c60c30", "#003478"],
   "Saudi Arabia": ["#006c35", "#ffffff"], "C\u00f4te d'Ivoire": ["#f77f00", "#009e60"],
+  "South Africa": ["#007a4d", "#ffb612"], Czechia: ["#d7141a", "#11457e"],
+  "Bosnia and Herzegovina": ["#002395", "#ffcd00"], Qatar: ["#8d1b3d", "#ffffff"],
+  Haiti: ["#00209f", "#d21034"], Scotland: ["#003380", "#ffffff"],
+  Paraguay: ["#d52b1e", "#ffffff"], "T\u00fcrkiye": ["#e30a17", "#ffffff"],
+  "Cura\u00e7ao": ["#003da5", "#f9e814"], Ecuador: ["#ffd100", "#003893"],
+  Sweden: ["#fecc02", "#006aa7"], Tunisia: ["#e70013", "#ffffff"],
+  Egypt: ["#ce1126", "#ffffff"], Iran: ["#239f40", "#da0000"],
+  "New Zealand": ["#000000", "#ffffff"], "Cabo Verde": ["#003893", "#cf2027"],
+  Iraq: ["#007a3d", "#ce1126"], Norway: ["#ef2b2d", "#ffffff"],
+  Algeria: ["#006233", "#ffffff"], Austria: ["#ed2939", "#ffffff"],
+  Jordan: ["#007a3d", "#ce1126"], "DR Congo": ["#007fff", "#ce1126"],
+  Uzbekistan: ["#1eb53a", "#009fcc"], Panama: ["#da121a", "#003580"],
 };
 
 const fmtPct = (value) => value == null ? "-" : `${(value * 100).toFixed(1)}%`;
@@ -132,19 +144,130 @@ function knockoutMatches() {
   return liveState.matches.filter((match) => match.stage !== "Group");
 }
 
-function bMatchCard(match) {
+// ---------------------------------------------------------------------------
+// Bracket slot helpers
+// ---------------------------------------------------------------------------
+const ROUND_BASE = { 'Round of 32': 72, 'Round of 16': 88, 'Quarter-final': 96, 'Semi-final': 100 };
+
+function parseSlotPart(part) {
+  part = part.trim();
+  const m = part.match(/Winner (Round of 32|Round of 16|Quarter-final|Semi-final) (\d+)/);
+  if (m) return 'W' + (ROUND_BASE[m[1]] + parseInt(m[2]));
+  return part;
+}
+
+function parseMatchSlots(slotStr) {
+  if (!slotStr) return [null, null];
+  if (slotStr === 'Semi-final losers') return ['L101', 'L102'];
+  if (slotStr === 'Semi-final winners') return ['W101', 'W102'];
+  const parts = slotStr.split(' vs ');
+  if (parts.length !== 2) return [null, null];
+  return [parseSlotPart(parts[0]), parseSlotPart(parts[1])];
+}
+
+// Pool of groups each variable 3rd-place slot can draw from (from tournament.yaml)
+const THIRD_PLACE_POOLS = {
+  A: ['C','E','F','H','I'], B: ['E','F','G','I','J'],
+  D: ['B','E','F','I','J'], E: ['A','B','C','D','F'],
+  G: ['A','E','H','I','J'], I: ['C','D','F','G','H'],
+  K: ['D','E','I','J','L'], L: ['E','H','I','J','K'],
+};
+
+function computeDoneGroups(matches) {
+  const counts = {};
+  for (const m of matches) {
+    if (m.stage !== 'Group') continue;
+    if (!counts[m.group]) counts[m.group] = { total: 0, locked: 0 };
+    counts[m.group].total++;
+    if (m.locked) counts[m.group].locked++;
+  }
+  const done = new Set();
+  for (const [g, v] of Object.entries(counts)) {
+    if (v.total > 0 && v.total === v.locked) done.add(g);
+  }
+  return done;
+}
+
+function confirmedForSlot(slot, doneGroups, byNo) {
+  if (!slot || slot.startsWith('3~')) return false;
+  if (slot.startsWith('W')) {
+    const n = parseInt(slot.slice(1));
+    const m = byNo && byNo[n];
+    return !!(m && m.winner);
+  }
+  if (slot.startsWith('L')) {
+    const n = parseInt(slot.slice(1));
+    const m = byNo && byNo[n];
+    return !!(m && m.winner);
+  }
+  return doneGroups.has(slot.slice(1));
+}
+
+function likelyForSlot(slot, byNo, stds) {
+  if (!slot) return null;
+  if (slot.startsWith('W')) {
+    const n = parseInt(slot.slice(1));
+    const m = byNo && byNo[n];
+    if (!m) return null;
+    if (m.winner) return m.winner;
+    if (m.home_win != null) return m.home_win >= 0.5 ? m.home : m.away;
+    return null;
+  }
+  if (slot.startsWith('L')) {
+    const n = parseInt(slot.slice(1));
+    const m = byNo && byNo[n];
+    if (!m || !m.winner) return null;
+    return m.winner === m.home ? m.away : m.home;
+  }
+  // Variable 3rd-place slots: assignment depends on Annex C combinatorics,
+  // only resolved once all groups finish — show nothing to avoid misleading duplicates.
+  if (slot.startsWith('3~')) return null;
+  const pos = parseInt(slot[0]) - 1;
+  const grp = slot.slice(1);
+  if (!stds || !stds[grp] || stds[grp].length <= pos) return null;
+  return stds[grp][pos].team || null;
+}
+
+const R32_SLOTS = [
+  ['2A','2B'],['1C','2F'],['1F','2C'],['2E','2I'],
+  ['1H','2J'],['2K','2L'],['2D','2G'],['1J','2H'],
+  ['1A','3~A'],['1B','3~B'],['1D','3~D'],['1E','3~E'],
+  ['1G','3~G'],['1I','3~I'],['1K','3~K'],['1L','3~L'],
+];
+const R16_SLOTS = [
+  ['W73','W75'],['W84','W86'],['W78','W77'],['W83','W85'],
+  ['W74','W76'],['W81','W88'],['W80','W79'],['W82','W87'],
+];
+const QF_SLOTS  = [['W89','W90'],['W91','W92'],['W93','W94'],['W95','W96']];
+const SF_SLOTS  = [['W97','W98'],['W99','W100']];
+const FIN_SLOT  = ['W101','W102'];
+
+function bMatchCard(match, hSlot, aSlot, byNo, stds, doneGroups) {
+  const dg = doneGroups || new Set();
+
+  function slotNode(slot, team) {
+    if (team) return { dot: colors(team)[0], node: `<span class="bTeamName">${team}</span>` };
+    const l = likelyForSlot(slot, byNo, stds);
+    if (!l) return { dot: '#ddd', node: '' };
+    if (confirmedForSlot(slot, dg, byNo)) {
+      return { dot: colors(l)[0], node: `<span class="bTeamName bConfirmed">${l}</span>` };
+    }
+    return { dot: '#8899aa', node: `<span class="bLikely">~ ${l}</span>` };
+  }
+
   if (!match) {
-    return `<div class="bCard bCardTbd">
-      <div class="bTeamRow"><span class="bDot" style="background:#ccc"></span><span class="bTeamName">TBD</span><span class="bScr"></span></div>
-      <div class="bTeamRow"><span class="bDot" style="background:#ccc"></span><span class="bTeamName">TBD</span><span class="bScr"></span></div>
+    const h = slotNode(hSlot, null);
+    const a = slotNode(aSlot, null);
+    const cls = (h.node || a.node) ? 'bCardPending' : 'bCardPending bCardEmpty';
+    return `<div class="bCard ${cls}">
+      <div class="bTeamRow"><span class="bDot" style="background:${h.dot}"></span>${h.node}</div>
+      <div class="bTeamRow"><span class="bDot" style="background:${a.dot}"></span>${a.node}</div>
       <div class="bInfoRow"></div>
     </div>`;
   }
   const cls = match.locked ? "bCardPlayed" : match.available ? "bCardReady" : "bCardLocked";
   const hw = match.locked && match.winner === match.home;
   const aw = match.locked && match.winner === match.away;
-  const [ha] = colors(match.home);
-  const [aa] = colors(match.away);
   let infoRow = "";
   if (match.available && !match.locked) {
     infoRow = `<button class="bSimBtn simulateMatch" data-match-id="${match.match_id}">▶ Sim</button>`;
@@ -153,15 +276,17 @@ function bMatchCard(match) {
   } else if (match.locked && match.went_to_et) {
     infoRow = `<span class="bInfo">AET</span>`;
   }
+  const h = slotNode(hSlot, match.home);
+  const a = slotNode(aSlot, match.away);
   return `<div class="bCard ${cls}" data-match-id="${match.match_id}">
     <div class="bTeamRow ${hw ? "bWinner" : ""}">
-      <span class="bDot" style="background:${ha}"></span>
-      <span class="bTeamName">${match.home || "TBD"}</span>
-      <span class="bScr">${match.locked ? match.home_score : (match.home_win != null ? fmtPct(match.home_win) : "")}</span>
+      <span class="bDot" style="background:${h.dot}"></span>
+      ${h.node}
+      <span class="bScr">${match.locked ? match.home_score : (match.home_win != null && match.home ? fmtPct(match.home_win) : "")}</span>
     </div>
     <div class="bTeamRow ${aw ? "bWinner" : ""}">
-      <span class="bDot" style="background:${aa}"></span>
-      <span class="bTeamName">${match.away || "TBD"}</span>
+      <span class="bDot" style="background:${a.dot}"></span>
+      ${a.node}
       <span class="bScr">${match.locked ? match.away_score : ""}</span>
     </div>
     <div class="bInfoRow">${infoRow}</div>
@@ -170,22 +295,29 @@ function bMatchCard(match) {
 
 function renderBracket() {
   const board = document.getElementById("bracketBoard");
-  const km = liveState.matches.filter((m) => m.stage !== "Group");
-  if (!km.length) {
-    board.innerHTML = `<div class="roundLocked" style="margin:18px">Complete the group stage to unlock the bracket.</div>`;
-    return;
+  const byId = {}, byNo = {};
+  for (const m of liveState.matches) {
+    byId[m.match_id] = m;
+    byNo[m.match_no]  = m;
   }
-  const byId = {};
-  for (const m of liveState.matches) byId[m.match_id] = m;
+  const stds = liveState.standings || {};
+  const doneGroups = computeDoneGroups(liveState.matches);
 
-  const r32 = Array.from({length: 16}, (_, i) => byId[`R32${i + 1}`] || null);
-  const r16 = Array.from({length: 8},  (_, i) => byId[`R16${i + 1}`] || null);
-  const qf  = Array.from({length: 4},  (_, i) => byId[`QF${i + 1}`]  || null);
-  const sf  = Array.from({length: 2},  (_, i) => byId[`SF${i + 1}`]  || null);
-  const fin = byId["F1"] || null;
+  function card(matchId, slotDef) {
+    const m = byId[matchId] || null;
+    const [hs, as] = m ? parseMatchSlots(m.slot || '') : slotDef;
+    return bMatchCard(m, hs, as, byNo, stds, doneGroups);
+  }
 
-  const pair   = (a, b) => `<div class="bPair">${bMatchCard(a)}${bMatchCard(b)}</div>`;
-  const single = (m)    => `<div class="bSingle">${bMatchCard(m)}</div>`;
+  const r32 = (i) => card(`R32${i+1}`, R32_SLOTS[i]);
+  const r16 = (i) => card(`R16${i+1}`, R16_SLOTS[i]);
+  const qf  = (i) => card(`QF${i+1}`,  QF_SLOTS[i]);
+  const sf  = (i) => card(`SF${i+1}`,  SF_SLOTS[i]);
+  const finM = byId['F1'] || null;
+  const [fhs, fas] = finM ? parseMatchSlots(finM.slot || '') : FIN_SLOT;
+
+  const pair   = (a, b) => `<div class="bPair">${a}${b}</div>`;
+  const single = (m)    => `<div class="bSingle">${m}</div>`;
 
   board.innerHTML = `
     <div class="bTree">
@@ -196,44 +328,54 @@ function renderBracket() {
       </div>
       <div class="bTreeBody">
         <div class="bRound bRoundLeft">
-          ${pair(r32[0],r32[1])}${pair(r32[2],r32[3])}${pair(r32[4],r32[5])}${pair(r32[6],r32[7])}
+          ${pair(r32(11),r32(13))}${pair(r32(0),r32(2))}${pair(r32(5),r32(4))}${pair(r32(10),r32(12))}
         </div>
         <div class="bRound bRoundLeft">
-          ${pair(r16[0],r16[1])}${pair(r16[2],r16[3])}
+          ${pair(r16(0),r16(1))}${pair(r16(2),r16(3))}
         </div>
         <div class="bRound bRoundLeft">
-          ${pair(qf[0],qf[1])}
+          ${pair(qf(0),qf(1))}
         </div>
         <div class="bRound bRoundLeft">
-          ${single(sf[0])}
+          ${single(sf(0))}
         </div>
         <div class="bCenter">
-          ${bMatchCard(fin)}
+          ${bMatchCard(finM, fhs, fas, byNo, stds, doneGroups)}
           ${liveState.champion
             ? `<div class="bChampion">🏆 ${liveState.champion}</div>`
             : `<div class="bChampionPlaceholder">Champion TBD</div>`}
         </div>
         <div class="bRound bRoundRight">
-          ${single(sf[1])}
+          ${single(sf(1))}
         </div>
         <div class="bRound bRoundRight">
-          ${pair(qf[2],qf[3])}
+          ${pair(qf(2),qf(3))}
         </div>
         <div class="bRound bRoundRight">
-          ${pair(r16[4],r16[5])}${pair(r16[6],r16[7])}
+          ${pair(r16(4),r16(5))}${pair(r16(6),r16(7))}
         </div>
         <div class="bRound bRoundRight">
-          ${pair(r32[8],r32[9])}${pair(r32[10],r32[11])}${pair(r32[12],r32[13])}${pair(r32[14],r32[15])}
+          ${pair(r32(1),r32(3))}${pair(r32(8),r32(15))}${pair(r32(7),r32(6))}${pair(r32(9),r32(14))}
         </div>
       </div>
     </div>
   `;
   wireMatchCards();
+
+  const koPending = liveState.matches.filter((m) => m.stage !== "Group" && m.available && !m.locked);
+  const simKnockBtn = document.getElementById("simKnockoutBtn");
+  if (simKnockBtn) {
+    simKnockBtn.style.display = koPending.length ? "" : "none";
+    if (koPending.length) simKnockBtn.textContent = `Simulate ${koPending[0].stage}`;
+  }
 }
 
 function renderResults() {
-  document.getElementById("resultRows").innerHTML = liveState.matches.filter((m) => m.stage === "Group").map((match) => `
-    <tr><td>${match.match_no}</td><td>${match.group}</td><td>${match.home}</td><td>${match.locked ? `${match.home_score}-${match.away_score}` : "-"}</td><td>${match.away}</td><td>${match.locked ? "Final" : "Scheduled"}</td></tr>
+  document.getElementById("resultRows").innerHTML = liveState.matches
+    .slice()
+    .sort((a, b) => a.match_no - b.match_no)
+    .map((match) => `
+    <tr><td>${match.match_no}</td><td>${match.stage === "Group" ? `Group ${match.group}` : match.stage}</td><td>${match.home || "TBD"}</td><td>${match.locked ? `${match.home_score}-${match.away_score}` : "-"}</td><td>${match.away || "TBD"}</td><td>${match.locked ? "Final" : "Scheduled"}</td></tr>
   `).join("");
 }
 
@@ -306,6 +448,24 @@ async function simulateMatch(matchId) {
     }
   } catch (err) {
     console.error("simulateMatch failed:", err);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function simulateKnockoutRound() {
+  const pending = liveState.matches.filter((m) => m.stage !== "Group" && m.available && !m.locked);
+  if (!pending.length) return;
+  setBusy(true);
+  try {
+    for (const match of pending) {
+      const res = await fetch(`/api/live-tournament/matches/${match.match_id}/simulate`, { method: "POST" });
+      if (!res.ok) break;
+      liveState = await res.json();
+      renderAll();
+    }
+  } catch (err) {
+    console.error("simulateKnockoutRound failed:", err);
   } finally {
     setBusy(false);
   }
@@ -763,6 +923,7 @@ document.querySelectorAll(".tab").forEach((tab) => {
 document.getElementById("searchBox").addEventListener("input", renderGroups);
 document.getElementById("resetBtn").addEventListener("click", resetTournament);
 document.getElementById("simGroupBtn").addEventListener("click", simulateAllGroupStage);
+document.getElementById("simKnockoutBtn").addEventListener("click", simulateKnockoutRound);
 document.getElementById("refreshBtn").addEventListener("click", refreshResults);
 document.getElementById("retrainBtn").addEventListener("click", startRetrain);
 document.getElementById("runSimBtn").addEventListener("click", runMonteCarloSimulation);

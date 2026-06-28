@@ -42,4 +42,4 @@ See `docs/arch.md` for the full design and `docs/ai_rules.md` for the enforced r
 
 ## Status note
 
-`config/tournament.yaml` leaves the round-of-32 slot pairings and best-third allocation table empty on purpose — those come from FIFA's official 2026 bracket and must be filled before `simulate` runs. Everything else is wired.
+The R32 slot pairings and best-third allocation table are fully wired in `config/tournament.yaml` and `src/wcpredict/sim/bracket.py` (sourced from FIFA's official 2026 regulations Annex C, all 495 combinations). The model and simulator are ready to run.
