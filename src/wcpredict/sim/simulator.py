@@ -223,18 +223,19 @@ def _ko_round_vectorized(
     strengths: dict,
     adjustments: dict[tuple[str, str], MatchAdjustment],
     team_features: dict[str, dict[str, float]] | None = None,
-    realized_results: dict[tuple[str, str], tuple[int, int]] | None = None,
+    locked_ko_winners: dict[tuple[str, str], str] | None = None,
 ) -> tuple[list[str], list[str]]:
     """
     Play all matches in one knockout round via vectorized sampling.
     90' draws → ET (vectorized) → shootout (scalar, rare).
     Returns (winners, losers) in matchup order.
-    Locked results (realized_results) are used as-is instead of re-simulated.
+    locked_ko_winners maps (home, away) → actual winner name; those matches
+    are used as-is (handles pens correctly) instead of being re-simulated.
     """
     if not matchups:
         return [], []
 
-    fixed = realized_results or {}
+    fixed = locked_ko_winners or {}
 
     # Partition into locked (real result) vs open (to simulate)
     open_matchups: list[tuple[str, str]] = []
@@ -243,16 +244,11 @@ def _ko_round_vectorized(
     pre_losers: dict[int, str] = {}
     pre_records: dict[int, tuple[str, str, int, int]] = {}
     for idx, (home, away) in enumerate(matchups):
-        if (home, away) in fixed:
-            gh, ga = fixed[(home, away)]
-            w, l = (home, away) if gh >= ga else (away, home)
+        w: str | None = fixed.get((home, away)) or fixed.get((away, home))
+        if w is not None:
+            l = away if w == home else home
             pre_winners[idx] = w; pre_losers[idx] = l
-            pre_records[idx] = (home, away, int(gh), int(ga))
-        elif (away, home) in fixed:
-            ga, gh = fixed[(away, home)]
-            w, l = (home, away) if gh >= ga else (away, home)
-            pre_winners[idx] = w; pre_losers[idx] = l
-            pre_records[idx] = (home, away, int(gh), int(ga))
+            pre_records[idx] = (home, away, 1, 0) if w == home else (home, away, 0, 1)
         else:
             open_matchups.append((home, away))
             open_indices.append(idx)
@@ -537,6 +533,7 @@ class TournamentSimulator:
         realized_results: dict[tuple[str, str], tuple[int, int]] | None = None,
         team_features: dict[str, dict[str, float]] | None = None,
         elo_k: float = 40.0,
+        locked_ko_winners: dict[tuple[str, str], str] | None = None,
     ) -> None:
         if settings is None:
             settings = _load_yaml("settings.yaml")
@@ -548,6 +545,7 @@ class TournamentSimulator:
         self.realized_results: dict[tuple[str, str], tuple[int, int]] = realized_results or {}
         self.team_features: dict[str, dict[str, float]] = team_features or {}
         self.elo_k: float = float(elo_k)
+        self.locked_ko_winners: dict[tuple[str, str], str] = locked_ko_winners or {}
 
     def run(self, n_runs: int | None = None, seed: int | None = None) -> dict[str, dict[str, int]]:
         """
@@ -638,7 +636,7 @@ class TournamentSimulator:
                 current, self.model, rng, self.settings,
                 ko_cache, run_strengths, self.adjustments,
                 self.team_features,
-                self.realized_results,
+                self.locked_ko_winners,
             )
             if self.elo_k > 0.0:
                 _update_strengths(run_strengths, ko_recs, self.elo_k)

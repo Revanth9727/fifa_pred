@@ -684,11 +684,21 @@ class PredictionService:
             results[cols].to_csv(self.results_path, index=False)
         return self.results_path
 
+    def _locked_ko_winners(self) -> dict[tuple[str, str], str]:
+        """Return a dict of (home, away) -> winner for all locked knockout matches."""
+        state = self.load_live_state()
+        return {
+            (m["home"], m["away"]): m["winner"]
+            for m in state.get("matches", [])
+            if m.get("stage") != "Group" and m.get("locked") and m.get("winner")
+        }
+
     def run_simulation(self, n_runs: int | None = None, seed: int | None = None) -> dict[str, Any]:
         model = self._load_model()
         strengths = self._load_strengths()
         results = self._local_results()
         team_features = self._team_features()
+        locked_ko = self._locked_ko_winners()
         runs = int(n_runs or self.settings.get("simulation", {}).get("n_runs", 25000))
         actual_seed = int(seed if seed is not None else self.settings.get("simulation", {}).get("random_seed", 42))
         sim = TournamentSimulator(
@@ -698,6 +708,7 @@ class PredictionService:
             strengths=strengths or None,
             realized_results=results,
             team_features=team_features,
+            locked_ko_winners=locked_ko,
         )
         counts = sim.run(n_runs=runs, seed=actual_seed)
         probs = _counts_to_probabilities(counts, n_runs=runs, groups=self.groups)
