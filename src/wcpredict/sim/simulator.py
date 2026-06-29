@@ -654,6 +654,7 @@ class TournamentSimulator:
                 self.model, rng, self.settings,
                 ko_cache, run_strengths, self.adjustments,
                 self.team_features,
+                self.locked_ko_winners,
             )
             counts[w3[0]]["third_place"] += 1
             counts[l3[0]]["semi_final"] += 1
@@ -668,6 +669,7 @@ class TournamentSimulator:
                 self.model, rng, self.settings,
                 ko_cache, run_strengths, self.adjustments,
                 self.team_features,
+                self.locked_ko_winners,
             )
             counts[w_final[0]]["champion"] += 1
 
