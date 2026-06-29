@@ -328,7 +328,7 @@ function renderBracket() {
       </div>
       <div class="bTreeBody">
         <div class="bRound bRoundLeft">
-          ${pair(r32(11),r32(13))}${pair(r32(0),r32(2))}${pair(r32(5),r32(4))}${pair(r32(10),r32(12))}
+          ${pair(r32(0),r32(2))}${pair(r32(11),r32(13))}${pair(r32(5),r32(4))}${pair(r32(10),r32(12))}
         </div>
         <div class="bRound bRoundLeft">
           ${pair(r16(0),r16(1))}${pair(r16(2),r16(3))}

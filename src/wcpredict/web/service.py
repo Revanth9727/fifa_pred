@@ -625,6 +625,8 @@ class PredictionService:
                         "team_away": away,
                         "goals_home": int(home_c.get("score", 0)),
                         "goals_away": int(away_c.get("score", 0)),
+                        "home_winner": bool(home_c.get("winner", False)),
+                        "away_winner": bool(away_c.get("winner", False)),
                         "source": "espn",
                     })
                 except (ValueError, TypeError):
@@ -747,23 +749,55 @@ class PredictionService:
 
         max_goals = int(self.settings.get("match_model", {}).get("max_goals", 10))
 
+        # Build a lookup that also carries winner flags for penalty resolution
+        winner_flags: dict[tuple[str, str], tuple[bool, bool]] = {}
+        for _, row in fetched.iterrows():
+            h = str(row.get("team_home", ""))
+            a = str(row.get("team_away", ""))
+            if h and a:
+                winner_flags[(h, a)] = (
+                    bool(row.get("home_winner", False)),
+                    bool(row.get("away_winner", False)),
+                )
+
         for match in state["matches"]:
-            if match.get("stage") != "Group" or match.get("locked"):
+            if match.get("locked"):
                 continue
             home, away = match["home"], match["away"]
             score = results.get((home, away)) or results.get((away, home))
             if score is None:
                 continue
-            gh, ga = score if (home, away) in results else (score[1], score[0])
+            is_reversed = (home, away) not in results
+            gh, ga = (score[1], score[0]) if is_reversed else score
 
+            # Determine winner; for knockout draws (ET/pens) use ESPN winner flag
+            is_group = match.get("stage") == "Group"
+            went_to_et = False
+            went_to_shootout = False
             winner: str | None = None
             if gh > ga:
                 winner = home
             elif ga > gh:
                 winner = away
+            else:
+                # Draw — only valid in group stage; in knockout use ESPN winner flag
+                if not is_group:
+                    hw, aw = winner_flags.get((home, away), winner_flags.get((away, home), (False, False)))
+                    if is_reversed:
+                        hw, aw = aw, hw
+                    if hw:
+                        winner = home
+                        went_to_et = True
+                        went_to_shootout = True
+                    elif aw:
+                        winner = away
+                        went_to_et = True
+                        went_to_shootout = True
+                    else:
+                        continue  # can't resolve yet
 
             prob: dict[str, Any] = {}
-            if model is not None:
+            if model is not None and is_group:
                 try:
                     prob = self._match_probability_row(
                         model=model,
@@ -780,8 +814,8 @@ class PredictionService:
                 "home_score": gh,
                 "away_score": ga,
                 "winner": winner,
-                "went_to_et": False,
-                "went_to_shootout": False,
+                "went_to_et": went_to_et,
+                "went_to_shootout": went_to_shootout,
                 "penalties_home": None,
                 "penalties_away": None,
                 "result_note": None,
