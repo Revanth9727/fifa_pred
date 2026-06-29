@@ -223,23 +223,54 @@ def _ko_round_vectorized(
     strengths: dict,
     adjustments: dict[tuple[str, str], MatchAdjustment],
     team_features: dict[str, dict[str, float]] | None = None,
+    realized_results: dict[tuple[str, str], tuple[int, int]] | None = None,
 ) -> tuple[list[str], list[str]]:
     """
     Play all matches in one knockout round via vectorized sampling.
     90' draws → ET (vectorized) → shootout (scalar, rare).
     Returns (winners, losers) in matchup order.
+    Locked results (realized_results) are used as-is instead of re-simulated.
     """
     if not matchups:
         return [], []
 
+    fixed = realized_results or {}
+
+    # Partition into locked (real result) vs open (to simulate)
+    open_matchups: list[tuple[str, str]] = []
+    open_indices: list[int] = []
+    pre_winners: dict[int, str] = {}
+    pre_losers: dict[int, str] = {}
+    pre_records: dict[int, tuple[str, str, int, int]] = {}
+    for idx, (home, away) in enumerate(matchups):
+        if (home, away) in fixed:
+            gh, ga = fixed[(home, away)]
+            w, l = (home, away) if gh >= ga else (away, home)
+            pre_winners[idx] = w; pre_losers[idx] = l
+            pre_records[idx] = (home, away, int(gh), int(ga))
+        elif (away, home) in fixed:
+            ga, gh = fixed[(away, home)]
+            w, l = (home, away) if gh >= ga else (away, home)
+            pre_winners[idx] = w; pre_losers[idx] = l
+            pre_records[idx] = (home, away, int(gh), int(ga))
+        else:
+            open_matchups.append((home, away))
+            open_indices.append(idx)
+
+    if not open_matchups:
+        winners = [pre_winners[i] for i in range(len(matchups))]
+        losers  = [pre_losers[i]  for i in range(len(matchups))]
+        records = [pre_records[i] for i in range(len(matchups))]
+        return winners, losers, records
+
     max_goals = int(settings.get("match_model", {}).get("max_goals", 10))
     et_scale  = float(settings.get("simulation", {}).get("et_lambda_scale", 0.33))
     so_coef   = float(settings.get("simulation", {}).get("shootout_strength_coef", 0.10))
-    n = len(matchups)
+    n = len(open_matchups)
 
-    # --- 90 minutes ---
+    # --- 90 minutes (open matchups only) ---
     grids_90, dists = _build_grids_for_matchups(
-        matchups, model, predict_cache, settings, strengths,
+        open_matchups, model, predict_cache, settings, strengths,
         neutral=True, adjustments=adjustments, rng=rng,
         team_features=team_features,
     )
@@ -264,7 +295,7 @@ def _ko_round_vectorized(
         # --- Penalty shootout for still-drawn after ET ---
         for j, i in enumerate(draw_idx):
             if total[i, 0] == total[i, 1]:
-                home, away = matchups[i]
+                home, away = open_matchups[i]
                 sd = (strengths.get(home, 1600.0) - strengths.get(away, 1600.0)) / 400.0
                 p_home = float(np.clip(0.5 + so_coef * sd, 0.05, 0.95))
                 if rng.random() < p_home:
@@ -272,15 +303,31 @@ def _ko_round_vectorized(
                 else:
                     total[i, 1] += 1
 
+    sim_winners: list[str] = []
+    sim_losers:  list[str] = []
+    sim_records: list[tuple[str, str, int, int]] = []
+    for i, (home, away) in enumerate(open_matchups):
+        if total[i, 0] >= total[i, 1]:
+            sim_winners.append(home); sim_losers.append(away)
+        else:
+            sim_winners.append(away); sim_losers.append(home)
+        sim_records.append((home, away, int(total[i, 0]), int(total[i, 1])))
+
+    # Merge locked and simulated results back into original matchup order
     winners: list[str] = []
     losers:  list[str] = []
     records: list[tuple[str, str, int, int]] = []
-    for i, (home, away) in enumerate(matchups):
-        if total[i, 0] >= total[i, 1]:
-            winners.append(home); losers.append(away)
+    sim_ptr = 0
+    for idx in range(len(matchups)):
+        if idx in pre_winners:
+            winners.append(pre_winners[idx])
+            losers.append(pre_losers[idx])
+            records.append(pre_records[idx])
         else:
-            winners.append(away); losers.append(home)
-        records.append((home, away, int(total[i, 0]), int(total[i, 1])))
+            winners.append(sim_winners[sim_ptr])
+            losers.append(sim_losers[sim_ptr])
+            records.append(sim_records[sim_ptr])
+            sim_ptr += 1
     return winners, losers, records
 
 
@@ -591,6 +638,7 @@ class TournamentSimulator:
                 current, self.model, rng, self.settings,
                 ko_cache, run_strengths, self.adjustments,
                 self.team_features,
+                self.realized_results,
             )
             if self.elo_k > 0.0:
                 _update_strengths(run_strengths, ko_recs, self.elo_k)
