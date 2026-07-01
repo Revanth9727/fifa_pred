@@ -534,6 +534,7 @@ class TournamentSimulator:
         team_features: dict[str, dict[str, float]] | None = None,
         elo_k: float = 40.0,
         locked_ko_winners: dict[tuple[str, str], str] | None = None,
+        wc_form_deltas: dict[str, float] | None = None,
     ) -> None:
         if settings is None:
             settings = _load_yaml("settings.yaml")
@@ -546,6 +547,7 @@ class TournamentSimulator:
         self.team_features: dict[str, dict[str, float]] = team_features or {}
         self.elo_k: float = float(elo_k)
         self.locked_ko_winners: dict[tuple[str, str], str] = locked_ko_winners or {}
+        self.wc_form_deltas: dict[str, float] = wc_form_deltas or {}
 
     def run(self, n_runs: int | None = None, seed: int | None = None) -> dict[str, dict[str, int]]:
         """
@@ -624,6 +626,12 @@ class TournamentSimulator:
             counts[ranked[3]]["group_exit"] += 1
             if grp not in qualifying_groups:
                 counts[ranked[2]]["group_exit"] += 1
+
+        # ---- WC 2026 form delta: boost/penalise based on group stage performance ----
+        if self.wc_form_deltas:
+            for team, delta in self.wc_form_deltas.items():
+                if team in run_strengths:
+                    run_strengths[team] = run_strengths[team] + delta
 
         # ---- R32 bracket ----
         r32 = build_r32(standings, qualifying_groups)

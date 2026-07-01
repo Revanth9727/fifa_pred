@@ -693,22 +693,160 @@ class PredictionService:
             if m.get("stage") != "Group" and m.get("locked") and m.get("winner")
         }
 
+    def _wc_form_strength_deltas(self) -> dict[str, float]:
+        """
+        Elo-scale strength deltas from WC 2026 group stage performance.
+
+        Composite score per team = 0.6 * (GD / GP) + 0.4 * (Pts / GP).
+        Scaled so the best/worst performer gets ±60 Elo pts.
+        Applied to run_strengths at the start of knockout rounds each sim run.
+        """
+        state = self.load_live_state()
+        locked_group = [
+            m for m in state.get("matches", [])
+            if m.get("stage") == "Group" and m.get("locked")
+        ]
+        if not locked_group:
+            return {}
+
+        stats: dict[str, dict[str, float]] = {}
+        for m in locked_group:
+            home, away = m["home"], m["away"]
+            gh = float(m.get("home_score") or 0)
+            ga = float(m.get("away_score") or 0)
+            for t in (home, away):
+                if t not in stats:
+                    stats[t] = {"gf": 0.0, "ga": 0.0, "pts": 0.0, "gp": 0}
+            stats[home]["gf"] += gh; stats[home]["ga"] += ga; stats[home]["gp"] += 1
+            stats[away]["gf"] += ga; stats[away]["ga"] += gh; stats[away]["gp"] += 1
+            if gh > ga:
+                stats[home]["pts"] += 3
+            elif ga > gh:
+                stats[away]["pts"] += 3
+            else:
+                stats[home]["pts"] += 1; stats[away]["pts"] += 1
+
+        scores: dict[str, float] = {}
+        for team, s in stats.items():
+            gp = max(s["gp"], 1)
+            scores[team] = 0.6 * (s["gf"] - s["ga"]) / gp + 0.4 * s["pts"] / gp
+
+        max_abs = max(abs(v) for v in scores.values()) if scores else 1.0
+        scale = 60.0 / max_abs if max_abs > 0 else 1.0
+        return {t: float(v * scale) for t, v in scores.items()}
+
+    def _squad_star_adjusted_strengths(
+        self, base_strengths: dict[str, float] | None
+    ) -> dict[str, float]:
+        """
+        Blend pre-tournament squad quality + star power into base Elo strengths.
+
+        squad_quality_rank (0-1 percentile): contributes ±30 Elo pts
+        star_power_rank    (0-1 percentile): contributes ±20 Elo pts
+        Centered at 0.5 — an average team receives zero adjustment.
+
+        Loads raw squad data directly (bypasses ablation masking in _team_features).
+        """
+        raw_df = _load_squad_team_features(self.settings)
+        strengths = dict(base_strengths) if base_strengths else {}
+        if raw_df is None or raw_df.empty:
+            return strengths
+        for _, row in raw_df.iterrows():
+            team = str(row.get("team", ""))
+            sq = float(row.get("squad_quality_rank", 0.5))
+            sp = float(row.get("star_power_rank", 0.5))
+            delta = 30.0 * (sq - 0.5) + 20.0 * (sp - 0.5)
+            strengths[team] = strengths.get(team, 1500.0) + delta
+        return strengths
+
+    def _h2h_adjustments(self) -> dict[tuple[str, str], Any]:
+        """
+        Recency-weighted H2H win-rate → small lambda delta for upcoming R32 matches.
+
+        Uses last 10 years of historical results (exponential decay, half-life 3 yrs).
+        Lambda delta capped at ±0.05 goals/match. Only applied when ≥3 meetings exist.
+        """
+        from wcpredict.sim.sampler import MatchAdjustment
+
+        paths = _paths(self.settings)
+        if not paths["match_table"].exists():
+            return {}
+
+        table = pd.read_parquet(paths["match_table"])
+        table["date"] = pd.to_datetime(table["date"])
+        now_ts = pd.Timestamp.now()
+        cutoff = now_ts - pd.DateOffset(years=10)
+        recent = table[
+            table["date"] >= cutoff
+        ].dropna(subset=["goals_home", "goals_away"]).copy()
+
+        state = self.load_live_state()
+        upcoming_r32 = [
+            (m["home"], m["away"])
+            for m in state.get("matches", [])
+            if m.get("stage") == "Round of 32" and not m.get("locked")
+        ]
+
+        half_life_days = 3.0 * 365.25
+        adjustments: dict[tuple[str, str], Any] = {}
+
+        for home, away in upcoming_r32:
+            mask = (
+                ((recent["team_home"] == home) & (recent["team_away"] == away)) |
+                ((recent["team_home"] == away) & (recent["team_away"] == home))
+            )
+            h2h = recent[mask]
+            if len(h2h) < 3:
+                continue
+
+            days_ago = (now_ts - h2h["date"]).dt.days.values.astype(float)
+            weights = np.exp(-days_ago / half_life_days)
+            total_w = float(weights.sum())
+            if total_w < 1e-9:
+                continue
+
+            home_w = 0.0
+            for idx, (_, row) in enumerate(h2h.iterrows()):
+                if row["team_home"] == home:
+                    gh, ga = float(row["goals_home"]), float(row["goals_away"])
+                else:
+                    gh, ga = float(row["goals_away"]), float(row["goals_home"])
+                if gh > ga:
+                    home_w += weights[idx]
+
+            win_rate = home_w / total_w
+            delta = float(np.clip((win_rate - 0.5) * 0.2, -0.05, 0.05))
+            if abs(delta) > 0.001:
+                adjustments[(home, away)] = MatchAdjustment(
+                    lambda_delta_home=delta,
+                    lambda_delta_away=-delta,
+                )
+        return adjustments
+
     def run_simulation(self, n_runs: int | None = None, seed: int | None = None) -> dict[str, Any]:
         model = self._load_model()
-        strengths = self._load_strengths()
+        base_strengths = self._load_strengths()
         results = self._local_results()
         team_features = self._team_features()
         locked_ko = self._locked_ko_winners()
+        # Feature 1: blend squad quality + star power into base Elo
+        strengths = self._squad_star_adjusted_strengths(base_strengths)
+        # Feature 2: WC 2026 group stage form → Elo delta applied before knockouts
+        wc_form_deltas = self._wc_form_strength_deltas()
+        # Feature 3: recency-weighted H2H lambda adjustment for upcoming R32 matchups
+        h2h_adjs = self._h2h_adjustments()
         runs = int(n_runs or self.settings.get("simulation", {}).get("n_runs", 25000))
         actual_seed = int(seed if seed is not None else self.settings.get("simulation", {}).get("random_seed", 42))
         sim = TournamentSimulator(
             self.groups,
             model,
             self.settings,
+            adjustments=h2h_adjs,
             strengths=strengths or None,
             realized_results=results,
             team_features=team_features,
             locked_ko_winners=locked_ko,
+            wc_form_deltas=wc_form_deltas,
         )
         counts = sim.run(n_runs=runs, seed=actual_seed)
         probs = _counts_to_probabilities(counts, n_runs=runs, groups=self.groups)
