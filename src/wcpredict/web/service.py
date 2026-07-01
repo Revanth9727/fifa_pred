@@ -1239,11 +1239,20 @@ class PredictionService:
         try:
             state = self.load_live_state()
             locked = [m for m in state.get("matches", []) if m.get("locked")]
-            locked_lines = "\n".join(
-                f"  - {m['home']} {m.get('home_score', '?')}-{m.get('away_score', '?')} {m['away']}"
-                f"  (Group {m.get('group', '?')})"
-                for m in locked
+            group_locked = [m for m in locked if m.get("stage") == "Group"]
+            ko_locked    = [m for m in locked if m.get("stage") != "Group"]
+            group_lines = "\n".join(
+                f"  - {m['home']} {m.get('home_score','?')}-{m.get('away_score','?')} {m['away']}"
+                f"  (Group {m.get('group','?')})"
+                for m in group_locked
             ) or "  None yet"
+            ko_lines = "\n".join(
+                f"  - [{m['stage']}] {m['home']} {m.get('home_score','?')}-{m.get('away_score','?')} {m['away']}"
+                f"  → Winner: {m.get('winner','?')}"
+                + ("  (pens)" if m.get("went_to_shootout") else " (AET)" if m.get("went_to_et") else "")
+                for m in ko_locked
+            ) or "  None yet"
+            locked_lines = f"GROUP STAGE RESULTS:\n{group_lines}\n\nKNOCKOUT RESULTS:\n{ko_lines}"
         except Exception:
             locked_lines = "  Unavailable"
 
